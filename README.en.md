@@ -12,7 +12,7 @@ Everything is counted from the host's own session logs — read-only, no network
 |---|---|
 | Status strip above the composer | `Chat 19.8M · today 155M`; tap to open the panel |
 | Turn note after each reply | Tokens and cache hits of that turn, e.g. `315k · cache 86%` |
-| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Five coloured cards in the order **All time → This chat → Today → Last 7 days → Last 30 days** (blue, green, orange, teal, violet). Each card keeps title, total and unit on one line, then one small line that runs hit rate · calls · input total · output side by side (plus daily average and days covered for 7/30 days); Today adds one line of models, Last 7 days adds a bar chart, Last 30 days adds two breakdown lines. Everything is inline text rather than column layout, so narrow screens and large font scales never split it into a vertical stack. Copy summary and refresh at the bottom |
+| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Five coloured cards in the order **All time → This chat → Today → Last 7 days → Last 30 days** (blue, green, orange, teal, violet). Every card shares one skeleton: a headline with title + total + tokens, then left/right aligned rows for hit rate, calls, input total, output; the 7- and 30-day cards add daily average and days covered, and the 30-day card ends with uncached input / cache reads / cache writes / reasoning. Today adds one line of models, Last 7 days adds a bar chart. The five cards line up vertically with normal spacing; copy summary and refresh at the bottom |
 
 Numbers follow the engine's own accounting:
 
@@ -21,7 +21,8 @@ Numbers follow the engine's own accounting:
 - "This chat" counts the current session only; the windows count every session on this host (subagents included);
 - Day boundaries follow the host's local calendar;
 - Numbers use three significant digits (`8.82k` / `1.25M` / `3.59B`); each metric carries its unit (tokens / calls);
-- Type is one step smaller (16 for titles and numbers, 13 for notes); values and units share one line, metrics run inline instead of in columns, so narrow screens and large font scales never split them;
+- Type: 20 for card titles, 16 for rows, 13 for notes; values and units share one line;
+- All five cards use the same skeleton with left-aligned labels and right-aligned values, so long labels never push the numbers away;
 - “Daily avg” divides by the days that actually have calls and shows the day count, instead of spreading over 30 days;
 - Reasoning shows an em dash when the engine does not report it, never a fake 0;
 - Hit rates keep one decimal, so 99.7% never reads as 100%.

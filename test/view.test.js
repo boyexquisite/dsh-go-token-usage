@@ -45,7 +45,7 @@ const collect = (node, type, out = []) => {
 
 const sections = (view) => view.children.filter((c) => c.type === 'stack')
 
-test('usageView: five coloured cards in the requested order, everything inline', async () => {
+test('usageView: five aligned cards in the requested order', async () => {
   const home = homeWithLog()
   const ledger = new UsageLedger({ home, now: () => NOW })
   await ledger.refresh()
@@ -54,22 +54,30 @@ test('usageView: five coloured cards in the requested order, everything inline',
     assert.equal(chat.v, 2)
     assert.equal(chat.children[0].type, 'stack', 'the first thing is the first card, not a note')
     const cards = sections(chat)
-    const titles = cards.map((c) => c.children[0].spans[0].text)
-    assert.deepEqual(titles, ['累计', '本对话', '今日', '近 7 天', '近 30 天'])
+    assert.deepEqual(cards.map((c) => c.children[0].spans[0].text), ['累计', '本对话', '今日', '近 7 天', '近 30 天'])
     assert.deepEqual(cards.map((c) => c.style.background), ['blue', 'green', 'orange', 'teal', 'violet'])
     assert.equal(new Set(cards.map((c) => c.style.background)).size, 5)
     for (const card of cards) {
       assert.equal(card.style.card, 'tinted')
+      assert.equal(card.style.padding, 'M')
       const headline = card.children[0]
-      assert.equal(headline.style.size, 'body')
-      assert.ok(JSON.stringify(headline.spans).includes('data.'))
-      assert.ok(headline.spans.some((span) => typeof span.text === 'string' && span.text.includes('tokens')), 'unit stays on the headline line')
+      assert.equal(headline.style.size, 'subtitle')
+      assert.ok(headline.spans.some((span) => typeof span.text === 'string' && span.text.includes('tokens')))
+      const kv = card.children.find((c) => c.type === 'keyValue')
+      const labels = kv.items.map((item) => item.label)
+      // Every card starts with the same four aligned rows.
+      assert.deepEqual(labels.slice(0, 4), ['命中率', '调用（次）', '输入合计', '输出'])
+      assert.ok(kv.items.every((item) => item.value.$ !== undefined))
     }
-    // Nothing uses row/columns any more: single-width columns were collapsing to a vertical stack.
+    const week = cards[3]
+    assert.deepEqual(week.children[1].items.map((i) => i.label).slice(4), ['日均', '覆盖天数（天）'])
+    assert.equal(collect(week, 'chart').length, 1)
+    const month = cards[4]
+    const monthLabels = month.children[1].items.map((i) => i.label)
+    assert.deepEqual(monthLabels.slice(4), ['日均', '覆盖天数（天）', '未缓存输入', '缓存读取', '缓存写入', '其中推理'])
+    assert.ok(month.children[1].items.length <= 24)
     assert.equal(collect(chat, 'row').length, 0)
     assert.equal(collect(chat, 'metric').length, 0)
-    assert.equal(collect(chat, 'list').length, 0)
-    assert.equal(collect(chat, 'chart').length, 1)
     assert.ok(JSON.stringify(chat).length < 32 * 1024)
 
     const features = usageView({}, { locale: 'en-US' })
@@ -106,21 +114,16 @@ test('usageData: windows, averages over days with calls, chart series and models
   }
 })
 
-test('breakdowns stay in the panel with labels and no units inside numbers', async () => {
+test('cards keep values as bindings and units out of the numbers', async () => {
   const home = homeWithLog()
   const ledger = new UsageLedger({ home, now: () => NOW })
   await ledger.refresh()
   try {
     const chat = usageView({ sessionId: 'session-aaa' }, { locale: 'zh-CN' })
-    const texts = collect(chat, 'text')
-    const labels = texts.flatMap((t) => (t.spans ?? []).map((span) => span.text)).filter((v) => typeof v === 'string')
-    const bindings = texts.flatMap((t) => (t.spans ?? []).map((span) => span.text)).filter((v) => typeof v === 'object')
-    assert.ok(labels.some((text) => text.includes('未缓存输入')))
-    assert.ok(labels.some((text) => text.includes('输入合计')), 'uncached input must not look like all the input')
-    assert.ok(labels.some((text) => text.includes('覆盖天数')))
-    assert.ok(labels.some((text) => text.includes('日均')))
-    assert.ok(labels.some((text) => text.includes('推理')))
-    assert.ok(bindings.length >= 20, 'every number is a data binding')
+    const items = collect(chat, 'keyValue').flatMap((kv) => kv.items)
+    assert.ok(items.every((item) => typeof item.value === 'object' && item.value.$ !== undefined))
+    assert.ok(items.some((item) => item.label === '未缓存输入'))
+    assert.ok(items.some((item) => item.label === '输入合计'), 'uncached input must not look like all the input')
   } finally {
     ledger.dispose()
     rmSync(home, { recursive: true, force: true })
