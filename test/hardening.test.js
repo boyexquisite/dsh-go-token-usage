@@ -238,3 +238,36 @@ test('a cache written by an older build is tightened to private modes on load', 
     rmSync(h.root, { recursive: true, force: true })
   }
 })
+
+test('an index.json that is a symlink is not followed', { skip: !POSIX && 'symlinks are limited on Windows' }, async () => {
+  const h = home()
+  try {
+    writeFileSync(join(h.dir, 'session.v4.jsonl.zstd'), frame([header, call()]))
+    const target = join(h.root, 'outside.json')
+    writeFileSync(target, JSON.stringify({ v: 8, files: {}, pending: {} }))
+    const cacheDir = join(h.root, 'cache', 'dsh-go-token-usage')
+    mkdirSync(cacheDir, { recursive: true })
+    symlinkSync(target, join(cacheDir, 'index.json'))
+    const ledger = new UsageLedger({ home: h.root, now: () => NOW })
+    assert.equal(ledger.sourceState().cacheDamaged, true)
+    await ledger.refresh()
+    assert.equal(tokens(ledger), 115, 'the logs are rescanned instead')
+    ledger.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('a sessions root that is a file is reported as unavailable, not scanned', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'harden-rootfile-'))
+  try {
+    writeFileSync(join(root, 'sessions'), 'not a directory')
+    const ledger = new UsageLedger({ home: root, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(ledger.sourceState().rootMissing, true)
+    assert.equal(tokens(ledger), 0)
+    ledger.dispose()
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
