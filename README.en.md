@@ -89,6 +89,25 @@ Editing the `dshGo` manifest in `package.json` is picked up automatically; chang
   changed files are read. The index lives in `$DSH_HOME/cache/dsh-go-token-usage/index.json`;
 - No build step and no dependencies — the whole plugin is in this repository.
 
+## Accuracy
+
+Numbers are not estimated or sampled: they come from the engine's own billed events — `usage` on every `assistant/message` (uncached input, cache reads, cache writes, output, reasoning) — the same accounting the engine charges.
+
+What has been checked:
+
+- Independent recount: decompress the raw `$DSH_HOME/sessions` logs with `zstd` and sum them in a separate Python script; today's tokens, today's calls, all-time tokens and all-time calls match the panel exactly;
+- Forked / seeded sessions start with a copy of the parent's events. Those were already billed on the parent log, so the plugin skips everything up to the `session/end-seed` marker with `inherited: true`; covered by a unit test;
+- Live accounting is reconciled against the files by event `seq`: a call is counted once, first provisionally, then from the file once it lands;
+- Tests cover day rollover, live de-duplication, file catch-up, fork prefixes and missing cache counters (`npm test`).
+
+Known boundaries:
+
+- Only this host's `$DSH_HOME`; other hosts count on their own;
+- "This chat" counts the session itself; subagent calls are included in the windows and the total, not in "this chat";
+- A relay that does not report cache counters shows "—" instead of a fake 0% hit rate;
+- Days follow the host's local time zone;
+- History depends on this host's session logs: deleted logs or a different `DSH_HOME` mean no history.
+
 ## Uninstall
 
 ```sh

@@ -120,3 +120,26 @@ test('a second instance reuses the cached index', async () => {
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('seeded fork logs do not double-count the inherited prefix', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-seeded-'))
+  try {
+    const dir = join(home, 'sessions', 'proj', 'fork-bbb')
+    mkdirSync(dir, { recursive: true })
+    const seededHeader = JSON.stringify({ type: 'session', version: 4, id: 'fork-bbb', createdAt: NOW, cwd: '/p', isSeeded: true, parentSession: 'session-aaa', delegationDepth: 1 })
+    const endSeed = JSON.stringify({ type: 'session/end-seed', seq: 2, time: NOW, data: { inherited: true } })
+    const lines = [seededHeader, call(0, NOW, 100, 1000, 10), call(1, NOW, 100, 1000, 10), endSeed, call(3, NOW, 5, 50, 5)]
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), frame(lines))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    // Only the fork's own call (65 tokens) is counted; the two inherited calls belong to the parent log.
+    assert.equal(totalTokens(ledger.window(1)), 60)
+    assert.equal(ledger.session('fork-bbb').calls, 1)
+    const rec = [...ledger.records.values()][0]
+    assert.equal(rec.isSeeded, true)
+    assert.equal(rec.inheritedCut, 2)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

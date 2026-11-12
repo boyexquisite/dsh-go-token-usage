@@ -157,3 +157,27 @@ test('strip and turn notes stay inside the protocol limits', async () => {
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('cache hit rate shows an em dash when the provider omits cache counters', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-nocache-'))
+  try {
+    const dir = join(home, 'sessions', 'proj', 'session-ccc')
+    mkdirSync(dir, { recursive: true })
+    const header = JSON.stringify({ type: 'session', version: 4, id: 'session-ccc', createdAt: NOW, cwd: '/p' })
+    const event = JSON.stringify({
+      type: 'assistant/message', seq: 0, time: NOW,
+      data: { turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 10 }, message: { source: { provider: 'relay-x', model: 'm' } } },
+    })
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from([header, event].join('\n') + '\n', 'utf8')))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(ledger.cacheKnown(), false)
+    const data = usageData(ledger, { sessionId: 'session-ccc' }, 'zh-CN')
+    assert.equal(data.today.hit, '—')
+    const notes = turnNoteData(ledger, { sessionId: 'session-ccc' }, 'zh-CN')
+    assert.equal(notes['1'].text, '110')
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
