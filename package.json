@@ -1,7 +1,7 @@
 {
   "name": "dsh-go-token-usage",
   "version": "0.1.0",
-  "description": "Token usage for the dsh-go app: this chat, today, last 7 days, last 30 days, cache hits — as a status strip, a native panel and per-turn notes. Read-only, counted from the host's own session logs.",
+  "description": "Token usage for the dsh-go app: status strip, native panel, per-turn notes and a PNG card. Counted from local session logs; no network.",
   "license": "MIT",
   "author": "miao",
   "type": "module",
