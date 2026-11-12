@@ -45,7 +45,7 @@ On a remote host (server / PC) prefer the installer above, or install the dsh-go
 - **Generate image**: needs `python3` + Pillow and a CJK font on the host (set `DSH_TOKEN_USAGE_PYTHON` to an absolute path if it lives somewhere unusual; same-named binaries in world-writable PATH directories are ignored) (Noto CJK / WenQuanYi / Microsoft YaHei / PingFang; otherwise Chinese labels are tofu). It tells you when Python/Pillow is missing. Drawing is deferred, so a slow render does not lose the tap. The card shows only in the chat that generated it; PNGs stay in the package's `assets/` (latest three kept, and images other chats are still showing are protected). There is no long-press save in the app, so screenshot it.
 - **This host only**: counts this `$DSH_HOME`; other hosts count separately. Subagents count in the windows and total, not in "this chat".
 - **First run takes a few seconds**: the initial scan of existing sessions takes about 5–10 s depending on log size; numbers appear shortly after.
-- **Dashes**: a relay that does not report cache counters shows "—" for that chat's / period's hit rate (a mixed host never reads a relay as 0%); unreported reasoning shows "—".
+- **Hit rate**: exact when every call reported cache counters; `≈xx%` when only some did (a single relay call no longer blanks the whole number, and a relay is never read as 0%); "—" only when nothing reported them. Unreported reasoning shows "—".
 - **Logs can vanish without zeroing history**: everything the plugin has read is kept in its own cache, so cleaning up logs or deleting a chat keeps the numbers and the panel says "N log(s) gone — history kept from cache". Logs that vanished before the plugin ever read them (for example, cleaned up before installing) cannot be recovered; the panel then says "No session logs here — live calls only" instead of silently showing 0. Switching `$DSH_HOME` means a different ledger; days follow the host's local time zone.
 
 ## Compatibility
@@ -63,6 +63,10 @@ On a remote host (server / PC) prefer the installer above, or install the dsh-go
 - **Installer supply chain**: the bridge is downloaded from a pinned commit and every file is checked against an embedded SHA-256; a custom `DSH_GO_BRIDGE_REF` skips that check and says so; `dsh`/`pnpm` are resolved only from non-world-writable PATH directories.
 - **Hostile files**: a session path that is a FIFO, a device, a huge file or a symlink to one is skipped safely (128MB per log, 32MB per line, 64MB cache caps), so it cannot hang the engine or exhaust memory; the panel says why something was skipped.
 - **Read-only filesystem / no permission**: readable sessions still count; a cache that cannot be written only costs a rescan, the panel keeps working.
+- **Root and app uid mixed**: a cache owned by another user is reported ("cache owner mismatch — history may be incomplete") and is never overwritten; when the installer runs as root it fixes ownership/permissions of what it installed for the `$DSH_HOME` owner.
+- **No HOME / no passwd entry**: `$DSH_HOME` → `HOME` → `USERPROFILE` → `os.homedir()` → cwd, so the plugin never fails to mount; setting `DSH_HOME` explicitly is still recommended on Android.
+- **ADB / local-directory install**: `--from <dir>` is copied to `$DSH_HOME/dsh-go/plugins/<name>` before installing, so the engine is never pointed at an npx cache, ADB temp directory or private directory through a `link:`.
+- **Android without /tmp**: image temporary files fall back to a `tmp/` under the cache dir; the 20s poll does not rewrite the cache when nothing changed (battery/fuse friendly).
 
 ## Privacy
 

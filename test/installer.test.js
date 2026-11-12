@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +16,9 @@ function sandbox() {
   const root = mkdtempSync(join(tmpdir(), 'installer-'))
   const bin = join(root, 'bin')
   mkdirSync(bin)
-  for (const name of ['dsh', 'pnpm']) writeFileSync(join(bin, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  for (const name of ['dsh', 'pnpm']) {
+    writeFileSync(join(bin, name), '#!/bin/sh\nif [ -n "$FAKE_LOG" ]; then echo "$@" >> "$FAKE_LOG"; fi\nexit 0\n', { mode: 0o755 })
+  }
   const env = { ...process.env, DSH_HOME: join(root, 'dsh'), PATH: `${bin}:${process.env.PATH}` }
   return { root, home: env.DSH_HOME, env }
 }
@@ -127,4 +129,25 @@ test('the pinned bridge hash manifest covers every downloaded file', () => {
   assert.equal(map.size, files.length)
   for (const file of files) assert.match(map.get(file) ?? '', /^[0-9a-f]{64}$/, file)
   assert.match(source.match(/const BRIDGE_PINNED = '([^']+)'/)[1], /^[0-9a-f]{40}$/)
+})
+
+test('a local directory --from is copied to a stable host path, not linked', () => {
+  const box = sandbox()
+  try {
+    const source = join(box.root, 'source-600')
+    mkdirSync(source, { recursive: true })
+    writeFileSync(join(source, 'package.json'), JSON.stringify({ name: OWN.name, version: OWN.version }))
+    chmodSync(source, 0o700)
+    const log = join(box.root, 'fake.log')
+    const env = { ...box.env, FAKE_LOG: log }
+    const out = run(['plugin', '--from', source], env)
+    assert.equal(out.status, 0, out.stderr)
+    const stable = join(box.home, 'dsh-go', 'plugins', OWN.name)
+    assert.equal(existsSync(join(stable, 'package.json')), true, 'the package was copied under DSH_HOME')
+    const called = readFileSync(log, 'utf8')
+    assert.ok(called.includes(stable), called)
+    assert.ok(!called.includes(source), 'pnpm must not be pointed at the source directory')
+  } finally {
+    rmSync(box.root, { recursive: true, force: true })
+  }
 })

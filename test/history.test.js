@@ -180,7 +180,7 @@ test('unknown cache coverage only affects the windows it covers', async () => {
     assert.equal(ledger.allCacheKnown(), false, 'the whole ledger still has an unknown day')
     const data = usageData(ledger, { sessionId: 'session-aaa' }, 'zh-CN')
     assert.equal(data.today.hit, '91%')
-    assert.equal(data.all.hit, '—')
+    assert.match(data.all.hit, /^≈\d/, 'partial coverage shows an approximate rate')
     ledger.dispose()
   } finally {
     rmSync(h.root, { recursive: true, force: true })

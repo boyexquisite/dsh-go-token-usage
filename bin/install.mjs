@@ -10,13 +10,12 @@
 // that serve /dsh-go/v1/*. The phone app's own engine ships it; a remote host
 // (server, PC) has to install it once. This script fetches it straight from the
 // upstream dsh-Go repository at a pinned commit — nothing is redistributed here.
-import { existsSync, readFileSync } from 'node:fs'
-import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { chmod, chown, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { resolveExecutable } from '../lib/exec.js'
+import { resolveExecutable, resolveHome } from '../lib/exec.js'
 
 const OWN = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -213,7 +212,7 @@ if (process.env.DSH_GO_BRIDGE_REF !== undefined && !/^[0-9a-f]{40}$/i.test(proce
   console.error('DSH_GO_BRIDGE_REF 必须是 40 位 commit SHA')
   process.exit(2)
 }
-const dshHome = String(process.env.DSH_HOME || '').trim() || join(homedir(), '.dsh')
+const dshHome = resolveHome()
 const pluginsDir = join(dshHome, 'dsh-go', 'plugins')
 const bridgeDir = join(pluginsDir, 'dsh-go-bridge')
 const profileDir = join(dshHome, 'profiles', profile)
@@ -274,6 +273,41 @@ function requireEnv() {
 }
 
 const BINARIES = () => ({ dsh: dshBin ?? 'dsh', pnpm: pnpmBin ?? 'pnpm' })
+
+/**
+ * When run as root on a host whose engine uses another uid (phones!), make sure
+ * what we wrote is traversable/readable: pnpm copies files with the current
+ * umask, and root's umask is often 077.
+ */
+async function fixPermissions(target) {
+  try {
+    if (typeof process.getuid !== 'function' || process.getuid() !== 0) return
+    // Never follow a link: `dsh plugin add <local dir>` may have linked a source
+    // checkout or an npx cache, and that tree is not ours to chmod/chown.
+    const linkStat = await lstat(target).catch(() => undefined)
+    if (linkStat === undefined) return
+    if (linkStat.isSymbolicLink()) {
+      const real = await realpath(target).catch(() => undefined)
+      const homeReal = await realpath(dshHome).catch(() => dshHome)
+      if (real === undefined || !(real === homeReal || real.startsWith(homeReal + '/'))) return
+      target = real
+    }
+    const homeStat = await stat(dshHome).catch(() => undefined)
+    const owner = homeStat && homeStat.uid !== 0 ? { uid: homeStat.uid, gid: homeStat.gid } : undefined
+    const walk = async (path) => {
+      const st = await stat(path).catch(() => undefined)
+      if (st === undefined) return
+      const mode = st.isDirectory() ? 0o755 : 0o644
+      await chmod(path, mode).catch(() => {})
+      if (owner !== undefined) await chown(path, owner.uid, owner.gid).catch(() => {})
+      if (!st.isDirectory()) return
+      for (const entry of await readdir(path).catch(() => [])) await walk(join(path, entry))
+    }
+    await walk(target)
+  } catch {
+    // permission fixes are best effort; the readable-check below still warns
+  }
+}
 
 function run(cmd, cmdArgs) {
   const bin = BINARIES()[cmd] ?? cmd
@@ -357,6 +391,7 @@ async function ensureBridge() {
   }
   if (complete && !flag('force')) {
     console.log('→ 桥接文件已就位，补充注册到 profile')
+    if (!flag('dry-run')) await fixPermissions(bridgeDir)
     if (!flag('dry-run')) run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
     else run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
     return
@@ -367,6 +402,7 @@ async function ensureBridge() {
     return
   }
   await downloadBridge()
+  await fixPermissions(bridgeDir)
   run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
 }
 
@@ -375,7 +411,8 @@ async function ensureBridge() {
 function installedPluginVersion() {
   try {
     return JSON.parse(readFileSync(join(profileDir, 'node_modules', OWN.name, 'package.json'), 'utf8')).version
-  } catch {
+  } catch (error) {
+    if (error?.code === 'EACCES' || error?.code === 'EPERM') return { denied: true }
     return undefined
   }
 }
@@ -383,10 +420,13 @@ function installedPluginVersion() {
 async function ensurePlugin() {
   const from = fromSpec
   const force = flag('force') || from !== undefined
-  const installed = installedPluginVersion()
+  const installedRaw = installedPluginVersion()
+  const installed = typeof installedRaw === 'string' ? installedRaw : undefined
   const depVersion = typeof deps()[OWN.name] === 'string' ? deps()[OWN.name] : undefined
   if (!force) {
-    if (installed !== undefined) {
+    if (installedRaw?.denied === true && installed === undefined) {
+      console.log('→ 已装但当前用户读不到（owner/权限不一致），重装')
+    } else if (installed !== undefined) {
       if (versionAtLeast(installed, OWN.version)) {
         console.log(`· ${OWN.name} ${installed} 已是最新，跳过（要重装加 --force）`)
         return
@@ -401,9 +441,36 @@ async function ensurePlugin() {
   let spec = from ?? `${OWN.name}@${OWN.version}`
   // Running from a git checkout (not an npx cache): install that checkout directly.
   if (from === undefined && existsSync(join(ROOT, '.git'))) spec = ROOT
+  // A local directory would become a pnpm "link:" to its source (npx cache, ADB
+  // temp dir, Termux private dir). Copy it somewhere the engine can read instead.
+  let copiedSource
+  if (from !== undefined) {
+    try {
+      if (statSync(from).isDirectory()) copiedSource = from
+    } catch {
+      copiedSource = undefined
+    }
+  }
+  if (copiedSource !== undefined) {
+    const stable = join(pluginsDir, OWN.name)
+    if (flag('dry-run')) {
+      console.log(`[dry-run] copy ${copiedSource} → ${stable} and install that copy`)
+      spec = stable
+    } else {
+      await mkdir(pluginsDir, { recursive: true })
+      await rm(stable, { recursive: true, force: true })
+      await cp(copiedSource, stable, { recursive: true })
+      await fixPermissions(stable)
+      spec = stable
+    }
+  }
   console.log(`→ dsh plugin --profile ${profile} add ${spec}`)
   try {
     run('dsh', ['plugin', '--profile', profile, 'add', spec])
+    const installedPath = join(profileDir, 'node_modules', OWN.name)
+    await fixPermissions(installedPath)
+    await fixPermissions(join(profileDir, 'package.json'))
+    await fixPermissions(profileDir)
   } catch (error) {
     if (from !== undefined || spec === ROOT || flag('dry-run')) throw error
     // Never leave the profile linked to an npx cache directory: copy the package
@@ -413,6 +480,7 @@ async function ensurePlugin() {
     await mkdir(pluginsDir, { recursive: true })
     await rm(stable, { recursive: true, force: true })
     await cp(ROOT, stable, { recursive: true })
+    await fixPermissions(stable)
     run('dsh', ['plugin', '--profile', profile, 'add', stable])
   }
 }

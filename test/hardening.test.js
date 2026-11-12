@@ -271,3 +271,85 @@ test('a sessions root that is a file is reported as unavailable, not scanned', a
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('a cache owned by another user is reported, never overwritten', { skip: !POSIX && 'uid semantics' }, async () => {
+  const h = home()
+  const fs = (await import('node:fs')).default
+  try {
+    writeFileSync(join(h.dir, 'session.v4.jsonl.zstd'), frame([header, call()]))
+    const first = new UsageLedger({ home: h.root, now: () => NOW })
+    await first.refresh()
+    first.dispose()
+    const cachePath = join(h.root, 'cache', 'dsh-go-token-usage', 'index.json')
+    const before = readFileSync(cachePath)
+    const originalOpen = fs.openSync
+    fs.openSync = (path, ...args) => {
+      if (String(path) === cachePath) {
+        const error = new Error('permission denied')
+        error.code = 'EACCES'
+        throw error
+      }
+      return originalOpen(path, ...args)
+    }
+    try {
+      const second = new UsageLedger({ home: h.root, now: () => NOW })
+      assert.equal(second.sourceState().cacheDenied, true)
+      assert.equal(second.sourceState().cacheDamaged, false)
+      await second.refresh()
+      assert.match(historyNote(second, 'zh-CN'), /用户不一致/)
+      second.dispose()
+    } finally {
+      fs.openSync = originalOpen
+    }
+    assert.deepEqual(readFileSync(cachePath), before, 'the other user cache is left untouched')
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('home resolution survives a missing HOME and a throwing os.homedir', async () => {
+  const os = (await import('node:os')).default
+  const saved = { DSH_HOME: process.env.DSH_HOME, HOME: process.env.HOME }
+  const original = os.homedir
+  try {
+    delete process.env.DSH_HOME
+    process.env.HOME = ''
+    os.homedir = () => { throw new Error('SystemError: no passwd entry') }
+    const ledger = new UsageLedger({})
+    assert.ok(typeof ledger.home === 'string' && ledger.home.endsWith('.dsh'))
+    await ledger.refresh()
+    assert.equal(ledger.sourceState().rootMissing, true)
+    process.env.HOME = '/'
+    const second = new UsageLedger({})
+    assert.ok(second.home.endsWith('.dsh') && second.home !== '/.dsh')
+    process.env.DSH_HOME = '/tmp/explicit-home'
+    const third = new UsageLedger({})
+    assert.equal(third.home, '/tmp/explicit-home')
+  } finally {
+    os.homedir = original
+    if (saved.DSH_HOME === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = saved.DSH_HOME
+    if (saved.HOME === undefined) delete process.env.HOME
+    else process.env.HOME = saved.HOME
+  }
+})
+
+test('a warm scan that reads nothing new does not rewrite the cache', async () => {
+  const h = home()
+  try {
+    writeFileSync(join(h.dir, 'session.v4.jsonl.zstd'), frame([header, call()]))
+    const first = new UsageLedger({ home: h.root, now: () => NOW })
+    await first.refresh()
+    first.dispose()
+    const cachePath = join(h.root, 'cache', 'dsh-go-token-usage', 'index.json')
+    const before = statSync(cachePath).mtimeMs
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const second = new UsageLedger({ home: h.root, now: () => NOW })
+    await second.refresh()
+    await second.refresh()
+    assert.equal(statSync(cachePath).mtimeMs, before, 'a warm poll must not rewrite the cache')
+    second.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
