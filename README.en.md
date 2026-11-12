@@ -12,14 +12,18 @@ Everything is counted from the host's own session logs — read-only, no network
 |---|---|
 | Status strip above the composer | `Chat 19.8M · today 155M`; tap to open the panel |
 | Turn note after each reply | Tokens and cache hits of that turn, e.g. `315k · cache 86%` |
-| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Today / last 7 days / last 30 days / all time; 30-day cache hit rate and daily average; 7-day bar chart; per-chat and 30-day breakdown (uncached input, cache reads, cache writes, output, reasoning, calls); models today; copy summary and refresh |
+| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | **Overview**: today's total, hit rate, calls; **Windows**: last 7 and 30 days, daily average over days with calls, days covered, calls; **Cache**: 30-day cache reads, writes, hit rate; 7-day bar chart; **This chat**: total, hit rate, calls plus the uncached input / cache reads / cache writes / input total / output / reasoning breakdown; 30-day breakdown; models today; copy summary and refresh |
 
 Numbers follow the engine's own accounting:
 
 - `tokens = uncached input + cache reads + cache writes + output`;
 - cache hit rate = cache reads ÷ (uncached input + cache reads + cache writes);
 - "This chat" counts the current session only; the windows count every session on this host (subagents included);
-- Day boundaries follow the host's local calendar.
+- Day boundaries follow the host's local calendar;
+- Numbers use three significant digits (`8.82k` / `1.25M` / `3.59G`) and the panel states the units;
+- “Daily avg” divides by the days that actually have calls and shows the day count, instead of spreading over 30 days;
+- Reasoning shows an em dash when the engine does not report it, never a fake 0;
+- Hit rates keep one decimal, so 99.7% never reads as 100%.
 
 ## Install
 

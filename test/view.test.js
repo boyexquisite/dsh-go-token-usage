@@ -49,14 +49,23 @@ test('usageView: panel renders in a chat and in All features', async () => {
     assert.equal(collect(chat, 'panel').length, 0)
     assert.equal(collect(chat, 'metric').length >= 6, true)
     const labels = collect(chat, 'metric').map((m) => m.label)
-    assert.ok(labels.includes('近 30 天'))
-    assert.ok(labels.includes('缓存命中（近 30 天）'))
+    assert.ok(labels.includes('今日'))
+    assert.ok(labels.includes('总量'))
+    assert.ok(collect(chat, 'text').some((t) => t.text.includes('缓存（近 30 天）')))
+    assert.ok(collect(chat, 'text').some((t) => t.text.includes('单位 tokens')))
+    // 未缓存输入和输入合计必须分开展示，避免把「未缓存输入」看成全部输入
+    const keys = collect(chat, 'keyValue').flatMap((kv) => kv.items.map((row) => row[0]))
+    assert.ok(keys.includes('近 30 天'))
+    assert.ok(keys.includes('未缓存输入'))
+    assert.ok(keys.includes('输入合计'))
+    assert.ok(keys.includes('其中推理'))
     assert.ok(collect(chat, 'chart').length === 1)
     assert.equal(collect(chat, 'chart')[0].kind, 'bar')
 
     const features = usageView({}, { locale: 'en-US' })
     assert.ok(collect(features, 'metric').map((m) => m.label).includes('Today'))
-    assert.ok(collect(features, 'metric').map((m) => m.label).includes('All time'))
+    assert.ok(collect(features, 'text').some((t) => t.text === 'All time'))
+    assert.ok(collect(features, 'metric').map((m) => m.label).includes('Total'))
 
     const json = JSON.stringify(chat)
     assert.ok(json.length < 32 * 1024, 'panel view stays under the 32 KiB budget')
@@ -75,9 +84,14 @@ test('usageData: windows, chart series and models are filled from the log', asyn
     assert.equal(data.chart.values.length, 7)
     assert.equal(data.chart.values.at(-1), 6090)
     assert.equal(data.chart.labels.at(-1), '11/12')
-    assert.equal(data.session.total, '6.1k')
+    assert.equal(data.session.total, '6.09k')
+    assert.equal(data.session.inputTotal, '6.06k')
+    assert.equal(data.session.calls, '3')
+    assert.equal(data.session.reasoning, '—') // engine reported no reasoning tokens
     assert.equal(data.models[0].title, 'm1')
     assert.equal(data.month.hit, '99%')
+    assert.equal(data.month.days, '1') // every call in this fixture is "today"
+    assert.equal(data.month.daily, '6.09k') // average over the days that have calls
     assert.ok(data.updated.startsWith('已更新'))
   } finally {
     ledger.dispose()

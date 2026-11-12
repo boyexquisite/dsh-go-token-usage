@@ -45,6 +45,7 @@ test('scan: folds every assistant/message.usage into day and session totals', as
     // 「session-<uuid>」 and「<uuid>」 are the same chat
     assert.equal(totalTokens(ledger.session('aaa')), 341)
     assert.equal(ledger.session('session-aaa').calls, 2)
+    assert.equal(ledger.coveredDays(30), 2) // today and yesterday have calls
     ledger.dispose()
   } finally {
     rmSync(home, { recursive: true, force: true })

@@ -41,13 +41,19 @@ test('cacheHitRate: prompt = uncached + cache reads + cache writes', () => {
   assert.equal(cacheHitRate({ input: 0, cached: 0, cacheWrite: 0 }), null)
   assert.equal(percent(0.634), '63%')
   assert.equal(percent(null), '—')
+  assert.equal(percent(0.997), '99.7%') // a real 99.7% must not read as 100%
+  assert.equal(percent(0.0004), '<0.1%')
+  assert.equal(percent(1), '100%')
 })
 
 test('compact: k / M / G boundaries', () => {
   assert.equal(compact(980), '980')
+  assert.equal(compact(8_823), '8.82k')
   assert.equal(compact(12_400), '12.4k')
   assert.equal(compact(186_000), '186k')
+  assert.equal(compact(999_600), '1M') // 999.6k rounds up a unit instead of printing 1000k
   assert.equal(compact(1_250_000), '1.25M')
+  assert.equal(compact(174_920_000), '175M')
   assert.equal(compact(3_590_000_000), '3.59G')
   assert.equal(compact(0), '0')
   assert.equal(compact(-1), '—')
