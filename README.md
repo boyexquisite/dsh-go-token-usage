@@ -155,6 +155,14 @@ node "$DSH_HOME/skills/dsh-go-plugin/kit/bin/check.mjs" "$PWD" --load   # 官方
 | `lib/view.js` | 面板视图（JSON 组件树 + `{ "$": "data.x" }` 绑定）与数据模型 |
 | `bin/install.mjs` | 安装器：桥接 + 插件 |
 
+## 发布（维护者）
+
+```sh
+node scripts/release.mjs 0.1.1     # 改版本、提交、打 tag、推分支和 tag
+```
+
+推 tag 后 GitHub Actions 会跑测试、`npm publish --provenance` 并创建 Release；版本已存在时自动跳过发布。也可以手动触发 workflow（Actions → publish → Run workflow）。需要仓库 secret `NPM_TOKEN`（granular token，勾选 Bypass 2FA，权限 Read and write）。
+
 ## 许可
 
 本仓库代码 MIT。安装器会按需从上游 [ccch1mneyyy/dsh-Go](https://github.com/ccch1mneyyy/dsh-Go) 下载 `dsh-go-bridge`（其 `package.json` 声明 MIT，仓库另有 AGPL-3.0 许可），本仓库不转存该代码，请以[上游](https://github.com/ccch1mneyyy/dsh-Go)为准。

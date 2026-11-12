@@ -159,6 +159,14 @@ node "$DSH_HOME/skills/dsh-go-plugin/kit/bin/check.mjs" "$PWD" --load
 | `lib/view.js` | Panel view (JSON tree with `{ "$": "data.x" }` bindings) and the data model |
 | `bin/install.mjs` | Installer: bridge + plugin |
 
+## Releasing (maintainers)
+
+```sh
+node scripts/release.mjs 0.1.1     # bump, commit, tag, push branch and tag
+```
+
+The tag runs GitHub Actions: tests, `npm publish --provenance` and a GitHub release; a version that already exists is skipped. The workflow can also be started manually (Actions → publish → Run workflow). It needs the repository secret `NPM_TOKEN` (granular token with Bypass 2FA, Read and write).
+
 ## License
 
 MIT for this repository. The installer downloads `dsh-go-bridge` on demand from
