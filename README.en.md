@@ -58,7 +58,7 @@ npx dsh-go-token-usage install --dry-run
 Without npm:
 
 ```sh
-dsh plugin --profile web add https://github.com/REPLACE_OWNER/dsh-go-token-usage/archive/refs/tags/v0.1.0.tar.gz
+dsh plugin --profile web add https://github.com/boyexquisite/dsh-go-token-usage/archive/refs/tags/v0.1.0.tar.gz
 node "$DSH_HOME/profiles/web/node_modules/dsh-go-token-usage/bin/install.mjs" bridge
 ```
 

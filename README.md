@@ -54,7 +54,7 @@ npx dsh-go-token-usage install --dry-run
 也可以不走 npm（直接从 GitHub 装）：
 
 ```sh
-dsh plugin --profile web add https://github.com/REPLACE_OWNER/dsh-go-token-usage/archive/refs/tags/v0.1.0.tar.gz
+dsh plugin --profile web add https://github.com/boyexquisite/dsh-go-token-usage/archive/refs/tags/v0.1.0.tar.gz
 # 桥接：本机引擎自带，远程主机用刚装进来的安装器补一次（装过会跳过）
 node "$DSH_HOME/profiles/web/node_modules/dsh-go-token-usage/bin/install.mjs" bridge
 ```

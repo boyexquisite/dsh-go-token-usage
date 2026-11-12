@@ -37,11 +37,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/REPLACE_OWNER/dsh-go-token-usage.git"
+    "url": "https://github.com/boyexquisite/dsh-go-token-usage.git"
   },
-  "homepage": "https://github.com/REPLACE_OWNER/dsh-go-token-usage#readme",
+  "homepage": "https://github.com/boyexquisite/dsh-go-token-usage#readme",
   "bugs": {
-    "url": "https://github.com/REPLACE_OWNER/dsh-go-token-usage/issues"
+    "url": "https://github.com/boyexquisite/dsh-go-token-usage/issues"
   },
   "engines": {
     "node": ">=22.19",
