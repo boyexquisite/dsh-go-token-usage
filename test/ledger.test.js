@@ -500,7 +500,7 @@ test('an empty or unreadable newest generation falls back to the older one', asy
   }
 })
 
-test('a readable newest generation is still the one that counts', async () => {
+test('a shorter newer generation never erases the complete older one', async () => {
   const home = mkdtempSync(join(tmpdir(), 'dsh-gen-ok-'))
   try {
     const dir = join(home, 'sessions', 'proj', 'session-aaa')
@@ -509,7 +509,9 @@ test('a readable newest generation is still the one that counts', async () => {
     writeFileSync(join(dir, 'session.v4.jsonl.zstd'), frame([header('session-aaa'), call(1, NOW, 10, 100, 5)]))
     const ledger = new UsageLedger({ home, now: () => NOW })
     await ledger.refresh()
-    assert.equal(totalTokens(ledger.allTime()), 115, 'the engine reads the newest generation')
+    // The engine itself would read only the header/short v4; for statistics the
+    // complete history wins so a torn migration cannot silently drop it.
+    assert.equal(totalTokens(ledger.allTime()), 341)
     ledger.dispose()
   } finally {
     rmSync(home, { recursive: true, force: true })

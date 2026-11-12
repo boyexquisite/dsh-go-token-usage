@@ -67,11 +67,11 @@ No account, key or credential is read, and nothing is sent over the network at r
 - "This chat" counts the session itself; subagent calls count in the windows and the total;
 - Fork/seed logs skip the inherited prefix (the `session/end-seed` marker), so nothing is counted twice; if the parent's own log is gone from this host, that prefix is not restored;
 - Sessions are deduplicated by id: moving/copying `$DSH_HOME`, or one session appearing in two project directories, counts once;
-- Logs are parsed as a stream, so memory stays bounded instead of growing with the file;
+- Logs are parsed zstd-frame by zstd-frame as a stream: decompressed memory stays bounded (the compressed file itself is read whole) and huge single frames are decoded incrementally;
 - A relay that omits cache counters shows a dash instead of a fake 0%; unreported reasoning shows a dash too;
 - The first run scans existing sessions (~5–10 s, depending on log size), then only changed files are read; the cache in `$DSH_HOME/cache/dsh-go-token-usage/index.json` holds numbers, model names, local session-file paths and live calls not yet flushed to disk;
-- Each session is read from its current format generation only (highest version in the file name), so older generations left by a format migration are not counted twice; if the newest generation is empty or unreadable the previous one is used instead, so history never drops to zero (the panel then says "N log(s) unreadable"); uncompressed logs (`compression: none`) are read too;
-- History read before a log disappeared stays counted and is flagged as missing from disk (the panel and Verify both say so);
+- Each session prefers its newest format generation, but when that one is empty, shorter than what was already counted, or unreadable, the more complete one is kept so history never drops to zero (the panel then says "N log(s) unreadable"); when both `.jsonl` and `.jsonl.zstd` exist for the same version the newer file wins; older generations are never double-counted, and uncompressed logs (`compression: none`) are read too;
+- History read before a log disappeared stays counted and is flagged as missing from disk (the panel and Verify both say so); the cache is version 8, so an older build ignores it and rescans instead of double-counting; a host timezone change re-reads the logs into the right days;
 - Verify re-counts every log and compares per session: `Verified · …` when it matches; cached history whose log is gone is named separately (`N log(s) gone`) instead of a fake diff; with no session log folder at all it reports `Verify skipped`; only a real unexplained amount shows `Diff … tokens`.
 
 </details>
