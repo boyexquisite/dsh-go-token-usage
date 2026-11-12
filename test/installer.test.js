@@ -117,3 +117,14 @@ test('an older install is upgraded, the current one is left alone', () => {
     rmSync(box.root, { recursive: true, force: true })
   }
 })
+
+test('the pinned bridge hash manifest covers every downloaded file', () => {
+  const source = readFileSync(join(PKG, 'bin', 'install.mjs'), 'utf8')
+  const fileList = source.match(/const BRIDGE_FILES = \[([\s\S]*?)\n\]/)[1]
+  const files = [...fileList.matchAll(/'([^']+)'/g)].map((match) => match[1])
+  const mapBody = source.match(/const BRIDGE_SHA256 = \{([\s\S]*?)\n\}/)[1]
+  const map = new Map([...mapBody.matchAll(/'([^']+)': '([0-9a-f]{64})'/g)].map((match) => [match[1], match[2]]))
+  assert.equal(map.size, files.length)
+  for (const file of files) assert.match(map.get(file) ?? '', /^[0-9a-f]{64}$/, file)
+  assert.match(source.match(/const BRIDGE_PINNED = '([^']+)'/)[1], /^[0-9a-f]{40}$/)
+})

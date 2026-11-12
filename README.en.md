@@ -55,6 +55,15 @@ On a remote host (server / PC) prefer the installer above, or install the dsh-go
 - Node 22.19+ (uses the `zlib` zstd decoder; DSH 0.2.2 itself requires Node 24.9+);
 - native surfaces do not show over DSH Remote connections (app limitation).
 
+## Special environments (rooted Android / proot / wireless debugging)
+
+- **proot / Android FUSE**: `readdir`'s `d_type` is unreliable there (a regular file can be reported as a symlink), so the scan always confirms types with `stat` and follows links; when a filesystem has no usable ctime the scan falls back to mtime + size.
+- **Root**: the plugin only reads/writes session logs and its cache under `$DSH_HOME`; no network, no credentials. Cache files are `0600`, the cache directory `0700`. Running the installer as root prints a reminder to make sure the DSH engine runs as the same user, otherwise it may not be able to read what was installed.
+- **Wireless debugging / ADB**: installing through `adb shell` or a root shell can leave files owned by another user; run `dsh plugin --profile web add …` as the engine's user instead. The plugin listens on no port and exposes no service.
+- **Installer supply chain**: the bridge is downloaded from a pinned commit and every file is checked against an embedded SHA-256; a custom `DSH_GO_BRIDGE_REF` skips that check and says so.
+- **Hostile files**: a session path that is a FIFO, a device, a huge file or a symlink to one is skipped safely (128MB per log, 32MB per line, 64MB cache caps), so it cannot hang the engine or exhaust memory; the panel says why something was skipped.
+- **Read-only filesystem / no permission**: readable sessions still count; a cache that cannot be written only costs a rescan, the panel keeps working.
+
 ## Privacy
 
 No account, key or credential is read, and nothing is sent over the network at runtime. It only reads the `usage` counters and model names from `$DSH_HOME/sessions` (never message bodies); exported images stay on this host.

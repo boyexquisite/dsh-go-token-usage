@@ -55,6 +55,15 @@ dsh plugin --profile web add dsh-go-token-usage
 - Node 22.19+（用到 `zlib` 的 zstd 解码；DSH 0.2.2 本身要求 Node 24.9+）；
 - 经 DSH Remote 连接时不显示原生界面（App 限制）。
 
+## 特殊环境（安卓 root / proot / 无线调试）
+
+- **proot / 安卓 FUSE**：`readdir` 的 `d_type` 不可靠（普通文件会被报成符号链接），插件一律用 `stat` 判定类型并跟随符号链接，proot 下也能正常统计；`/sdcard` 一类 FUSE 文件系统 mtime/ctime 可能不精确，识别不到 ctime 时退回 mtime + size 判断。
+- **root**：插件只读写 `$DSH_HOME` 下的会话日志与缓存，不联网、不读凭据；缓存文件权限 `0600`、目录 `0700`。以 root 跑安装器时会提示：确保 DSH 引擎用同一用户运行，否则它可能读不到刚装的文件。
+- **无线调试 / ADB**：用 `adb shell` 或 root shell 装插件时，文件 owner 可能不是 App 引擎用户；请在引擎同一用户下执行 `dsh plugin --profile web add …`。插件不监听端口、不暴露服务。
+- **安装器供应链**：桥接按 pinned commit 下载并逐文件校验 SHA-256；`DSH_GO_BRIDGE_REF` 自定义 ref 会跳过校验并明确提示。
+- **异常/恶意文件**：会话路径若是 FIFO、设备、超大文件或指向它们的符号链接会被安全跳过（单日志 128MB、单行 32MB、缓存 64MB 上限），不会卡住引擎或吃爆内存；跳过原因会在面板提示。
+- **只读文件系统 / 权限不足**：会话读得到就照常统计；缓存写不进去只会变慢（每次重新扫描），面板仍可用。
+
 ## 隐私
 
 不读账号、密钥或任何凭据；运行时不联网。只读 `$DSH_HOME/sessions` 里的 usage 计数和模型名，不保存对话正文；导出的图片只存在本机。

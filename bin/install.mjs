@@ -23,7 +23,8 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 // Upstream dsh-Go bridge, protocol v1 (package dsh-go-bridge 0.4.0). Pinned so a
 // future upstream change cannot silently break installs; override with DSH_GO_BRIDGE_REF.
 const BRIDGE_REPO = 'ccch1mneyyy/dsh-Go'
-const BRIDGE_REF = process.env.DSH_GO_BRIDGE_REF || 'c36fe8c1a8bc82ef08aae89023aea226117386ba'
+const BRIDGE_PINNED = 'c36fe8c1a8bc82ef08aae89023aea226117386ba'
+const BRIDGE_REF = process.env.DSH_GO_BRIDGE_REF || BRIDGE_PINNED
 const BRIDGE_SRC = 'runtime/bridge/dsh-go-bridge'
 const BRIDGE_FILES = [
   'cordis.patch.yml',
@@ -60,6 +61,45 @@ const BRIDGE_FILES = [
   'lib/native/util.js',
   'lib/native/ws.js',
 ]
+
+// SHA-256 of every pinned bridge file at BRIDGE_REF. Downloaded bytes are verified
+// against this map, so a compromised mirror/DNS/proxy cannot inject code into a
+// rooted host. Custom BRIDGE_REF values skip the check (they are not in the map).
+const BRIDGE_SHA256 = {
+  'PRESET-NOTICE.txt': 'e61242af8da22f92bf592e48e29f7dbe452b932f38a41a59a3e6e674d5e7130d',
+  'cordis.patch.yml': '9993e09a264ed0624587f2f4dd39f30a29b0f0b349780953f7fe32a9dfe67557',
+  'lib/client.js': '9d826e51021a0133978b16ed5c87d67606f12639fd98829346f648a06884fcb3',
+  'lib/companion/full-context.js': '83737e05d1f0af580ef6a087cd6b38c153b80cfee8ea9d76a78bd168a0e5f64f',
+  'lib/companion/full-persona.js': '398c7261cdadf51632854535080443d83fe23cc3f0b63f46ac3647de32fe23cc',
+  'lib/companion/prompt-context.js': '630d7587654bc23e695d08dd8776d6fdd679f25e76f576b5761911e15f8acc69',
+  'lib/companion/recall-context.js': '770c7b01b9ebf578c99641bcc6a7716ada06b7572a15c85aaccca24c6ea4cbfb',
+  'lib/companion/recall-engine.js': '1b3424c58f7dc02e7eda09f17af53e1e88c74d1676fe03e3cf57c83a5abdc62d',
+  'lib/companion/recall-markers.js': '49ec14cb6ccb1cbe43f0cd9912e6e79a5804aaf3ac7141601d7c2ae38acfe41e',
+  'lib/companion/recall-schema.js': '9749d220b1e66fc78545d8c71404bb089ebbc7ab9a7863a833d418b0d51d23cf',
+  'lib/companion/recall-selector.js': '0a7780058d4272480fb37a2720fdc17a0d8f1957263e103117a6244da4972325',
+  'lib/companion/recall.js': '66dea2bd7c7734a692867568a6de68e515968aa0a9852445b252145a42e94d36',
+  'lib/companion/routes.js': '9d0f821dc78cdf1ad1f9fb8db77485aed80521f499d2b2b09f1b4b1486e6c02b',
+  'lib/companion/schema.js': 'e1e32e223eea3d40c1d55a85255b62a0bbb30f3e5e08e088755f76b22f1dd63a',
+  'lib/companion/signals-schema.js': '9797b7886b73a1bf1a1a92fd1ccb3e36c3d1029012a620570fda1eca1e8b1714',
+  'lib/companion/signals.js': 'deba2f577cae0ccbd46e940e4ebcc547980d3a4a4b6be5dce2859c4b15172465',
+  'lib/companion/state.js': '7d639e0770d9602f644f0d3870df911cd37d608818c819bb52c2c28f81c41715',
+  'lib/companion/store.js': 'bb61d2f738ba03151ea3c9f85e14a2d5632cbe365e8a14cc7091476c979d6076',
+  'lib/config-source.js': 'c19ce8151e00ce8277e267c0e680888d30be0ec45b632b06fd3072b4e6a0ae3e',
+  'lib/index.js': 'b35104a3b546fbbf99d51b51a652b5e46d722e1d805780d232072cd8397c289d',
+  'lib/native/capabilities.js': '845a298e0defe793acbaa7a1330e2bdbb164e1600ce389c0c08a6f93cac50135',
+  'lib/native/capability-runtime.js': '2283fa147623396400b8cc055a0870f3e17feb581103cfd939a3dd802bbc72be',
+  'lib/native/core.js': '81d17022a9f409d50d2d2416637c1a2a2cb7ce35ccc99074ea3ee5c1c6d657b5',
+  'lib/native/effects.js': 'dc21b22d5fce2402d32d3d37071bfa50e5228f56ca0e3dd154980d2c2ad2ef16',
+  'lib/native/file-picker-runtime.js': '2fcc8f06e6aaeb538e7d2a48aa164418fedd57f4add2e9911aca3bd4aa1c361f',
+  'lib/native/limits.js': 'bf7215077362ddbd10e8dee7302f7a9ff8c71dc439773c4307de5ef681c6f8ac',
+  'lib/native/manifest.js': '897378bfad0538e381c764915b7b772645cd3e5ec1e989656f98e174eaec02cf',
+  'lib/native/routes.js': 'f1b46b019a8692b8d9f2fbc589d6bd51b2c4d04b307fb4336f50e91527e02500',
+  'lib/native/util.js': '5d95310a47221010e68e1c93cebe7d198d1f57ace5a0a8cd4731c6ab57d24347',
+  'lib/native/ws.js': 'a82bb23bb32eb973c93dc75210dbcfe6af221ceb0dbee9bf4695a22b72351c77',
+  'lib/plugin-config.js': 'f12c64a428135fef287ce94815e8dcd1bf47476f95d6099d79131c48041f0a9d',
+  'lib/session-deletion.js': '8483c8265cfad03d9f4f1b5a483f0f4a300bb97eb0027d8d60016c9f09706837',
+  'package.json': 'e5bc88d5895c53cf5c551a77080125c15b04954bc0b3bc9b8810249861ee7c09',
+}
 
 // ── arguments ───────────────────────────────────────────────────────────────
 // Options may appear before or after the command; unknown flags are errors
@@ -178,6 +218,9 @@ const bridgeDir = join(pluginsDir, 'dsh-go-bridge')
 const profileDir = join(dshHome, 'profiles', profile)
 const profilePkgPath = join(profileDir, 'package.json')
 const appRuntime = existsSync('/etc/dsh-app/runtime.json')
+if (typeof process.getuid === 'function' && process.getuid() === 0) {
+  console.log('· 以 root 运行：请确认目标主机上的 DSH 引擎也用同一用户运行，否则它可能读不到刚装的文件')
+}
 
 function profilePkg() {
   try {
@@ -245,6 +288,13 @@ async function fetchBridgeFile(file) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const body = Buffer.from(await res.arrayBuffer())
       if (body.length === 0) throw new Error('空文件')
+      if (BRIDGE_REF === BRIDGE_PINNED) {
+        const { createHash } = await import('node:crypto')
+        const got = createHash('sha256').update(body).digest('hex')
+        const want = BRIDGE_SHA256[file]
+        if (want === undefined) throw new Error(`没有 ${file} 的哈希，拒绝安装`)
+        if (got !== want) throw new Error(`哈希不匹配（${file}：期望 ${want.slice(0, 12)}…，实际 ${got.slice(0, 12)}…）`)
+      }
       return body
     } catch (error) {
       lastError = error
@@ -256,6 +306,7 @@ async function fetchBridgeFile(file) {
 
 async function downloadBridge() {
   console.log(`→ 从上游 ${BRIDGE_REPO}@${BRIDGE_REF.slice(0, 7)} 下载 dsh-go 桥接…`)
+  if (BRIDGE_REF !== BRIDGE_PINNED) console.log('· 自定义 BRIDGE_REF：跳过文件哈希校验')
   // Download into a staging directory and only swap it in once every file is
   // there: a half-finished download must never look installed.
   const stage = `${bridgeDir}.partial-${process.pid}`
