@@ -13,7 +13,7 @@ Native token usage for the [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) phone
 | Status strip | `Chat 8.8M · today 245M`; tap to open the panel |
 | Panel | All time / this chat / today / last 7 days / last 30 days, hit rate, daily average, days covered, today's models labelled official / relay / subscription |
 | Turn note | Tokens and cache hits of each reply |
-| Export image | Draws a portrait card on the host and shows it at the bottom of the panel (a placeholder until you export) — screenshot to share (needs `python3` + Pillow) |
+| Generate image | Draws a portrait card on the host and shows it at the bottom of the panel (a placeholder until you export) — screenshot to share (needs `python3` + Pillow) |
 | Verify | Re-counts the raw logs and compares with the panel |
 
 ## Install
@@ -34,7 +34,7 @@ Then switch hosts (or reopen the app) once so it re-reads the plugin inventory.
 
 - **Needs the dsh-go bridge**: native surfaces only render on hosts that serve it — the phone's own engine ships it; for a remote host run `npx dsh-go-token-usage install` (the installer downloads the bridge from upstream GitHub). **DSH Remote** connections do not show them.
 - **Re-read after install**: switch hosts in the app (or reopen it). Manifest changes are picked up automatically; changes under `lib/` need an engine restart.
-- **Export image**: needs `python3` + Pillow on the host (it tells you when missing). The picture shows at the bottom of the panel; the PNG stays in the package's `assets/` (latest three kept). There is no long-press save in the app, so screenshot it.
+- **Generate image**: needs `python3` + Pillow on the host (it tells you when missing). The picture shows at the bottom of the panel; the PNG stays in the package's `assets/` (latest three kept). There is no long-press save in the app, so screenshot it.
 - **This host only**: counts this `$DSH_HOME`; other hosts count separately. Subagents count in the windows and total, not in "this chat".
 - **First run takes a few seconds**: the initial scan of existing sessions is about 5 s; numbers appear shortly after.
 - **Dashes**: a relay that does not report cache counters shows "—" for the hit rate; unreported reasoning shows "—".

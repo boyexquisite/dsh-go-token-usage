@@ -54,7 +54,7 @@ test('usageView: one panel with the image at the bottom and four actions', () =>
 test('imagePanelData: placeholder until a render exists, then the asset reference', () => {
   const empty = imagePanelData(null, 'zh-CN')
   assert.equal(empty.imageSrc, 'asset:placeholder.png')
-  assert.ok(empty.imageCaption.includes('导出图片'))
+  assert.ok(empty.imageCaption.includes('生成图片'))
   const ready = imagePanelData({ src: 'asset:usage-20260101-000000.png', aspect: 0.66, caption: '今日 1M tokens' }, 'zh-CN')
   assert.equal(ready.imageSrc, 'asset:usage-20260101-000000.png')
   assert.equal(ready.imageAspect, 0.66)
