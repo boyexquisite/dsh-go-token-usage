@@ -2,9 +2,17 @@
 
 [中文](README.md) | English
 
-Native token usage for the [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) phone app: a status strip above the composer, a panel in the chat's Plugins tab, a note under every reply, and an exported usage card. Every number comes from this host's own session logs — no network, no estimates.
+Native token usage for the [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) phone app: a status strip above the composer, a panel in the chat's Plugins tab, a note under every reply, and a generated usage card. Every number comes from this host's own session logs — no network, no estimates.
 
-![Usage card (sample data)](docs/preview.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/boyexquisite/dsh-go-token-usage/main/docs/panel.jpg" width="300" alt="The panel in the app's Plugins tab">
+</p>
+
+The generated usage card (sample data):
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/boyexquisite/dsh-go-token-usage/main/docs/preview.png" width="260" alt="Generated usage card (sample data)">
+</p>
 
 ## Features
 

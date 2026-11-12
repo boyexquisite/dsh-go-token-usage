@@ -2,9 +2,17 @@
 
 [English](README.en.md) | 中文
 
-给 [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) 手机 App 的原生 Token 用量插件：输入框上方的状态条、对话「插件」页签里的面板、每条回复的用量脚注，还能导出一张用量卡片。数字全部来自本机会话日志，不联网、不估算。
+给 [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) 手机 App 的原生 Token 用量插件：输入框上方的状态条、对话「插件」页签里的面板、每条回复的用量脚注，还能生成一张用量卡片。数字全部来自本机会话日志，不联网、不估算。
 
-![用量卡示例（示例数据）](docs/preview.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/boyexquisite/dsh-go-token-usage/main/docs/panel.jpg" width="300" alt="在 dsh-go App 侧栏「插件」页签里的实际样子">
+</p>
+
+生成的用量卡（示例数据）：
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/boyexquisite/dsh-go-token-usage/main/docs/preview.png" width="260" alt="生成的用量卡（示例数据）">
+</p>
 
 ## 功能
 
