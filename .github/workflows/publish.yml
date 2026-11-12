@@ -54,32 +54,39 @@ jobs:
         run: |
           mkdir -p dist
           npm pack --pack-destination dist
-      - name: Release notes
+      - name: Release notes and GitHub release
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           PREVIOUS=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           {
             echo "## dsh-go-token-usage ${GITHUB_REF_NAME}"
             echo
+            echo "### 更新日志 / Changelog"
+            echo
+            awk -v version="$VERSION" '
+              $0 == "## " version { capture = 1; next }
+              capture && /^## / { exit }
+              capture { print }
+            ' CHANGELOG.md
+            echo
+            echo "### Commits"
             if [ -n "$PREVIOUS" ]; then
-              echo "### Changes since ${PREVIOUS}"
               git log --pretty='- %s (%h)' "${PREVIOUS}..${GITHUB_REF_NAME}"
             else
-              echo "### Changes"
               git log --pretty='- %s (%h)' "${GITHUB_REF_NAME}"
             fi
             echo
-            echo "### Install"
+            echo "### Install / 安装"
             echo '```sh'
             echo 'npx dsh-go-token-usage install'
+            echo '# or: dsh plugin --profile web add dsh-go-token-usage@'"$VERSION"
             echo '```'
             echo
             echo "Counted from the host's own session logs: no account, no network, no estimates."
-          } > /tmp/release-notes.md
-      - name: GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          gh release create "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md --verify-tag || gh release edit "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
-          gh release upload "$GITHUB_REF_NAME" dist/*.tgz --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          } > release-notes.md
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes-file release-notes.md dist/*.tgz \
+            || gh release edit "${GITHUB_REF_NAME}" --notes-file release-notes.md
+          gh release upload "${GITHUB_REF_NAME}" dist/*.tgz --clobber
