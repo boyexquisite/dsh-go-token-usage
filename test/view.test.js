@@ -154,6 +154,9 @@ test('strip and turn notes stay inside the protocol limits', async () => {
     const text = summaryText(ledger, { sessionId: 'session-aaa' }, 'zh-CN')
     assert.ok(text.includes('本对话'))
     assert.ok(text.includes('近 30 天'))
+    // The model line must name the model and its token count, not the provider/—
+    assert.ok(text.includes('- m1: 6.09k'), text)
+    assert.ok(!text.includes('—'), text)
   } finally {
     ledger.dispose()
     rmSync(home, { recursive: true, force: true })
