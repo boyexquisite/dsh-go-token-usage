@@ -79,7 +79,7 @@ test('--dry-run prints the plan and writes nothing (no bridge download)', () => 
     const out = run(['install', '--dry-run'], box.env)
     assert.equal(out.status, 0)
     assert.match(out.stdout, /\[dry-run\] download 33 files/)
-    assert.match(out.stdout, /\[dry-run\] dsh plugin --profile web add/)
+    assert.match(out.stdout, /\[dry-run\] .*dsh plugin --profile web add/)
     assert.equal(existsSync(join(box.home, 'dsh-go', 'plugins', 'dsh-go-bridge')), false, 'dry-run must not write the bridge')
     assert.equal(existsSync(join(box.home, 'profiles', 'web')), false, 'dry-run must not touch the profile')
   } finally {

@@ -16,6 +16,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { resolveExecutable } from '../lib/exec.js'
 
 const OWN = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -218,6 +219,9 @@ const bridgeDir = join(pluginsDir, 'dsh-go-bridge')
 const profileDir = join(dshHome, 'profiles', profile)
 const profilePkgPath = join(profileDir, 'package.json')
 const appRuntime = existsSync('/etc/dsh-app/runtime.json')
+// Never run dsh/pnpm out of a world-writable PATH entry (rooted phone / Adb shell).
+const dshBin = resolveExecutable('dsh')
+const pnpmBin = resolveExecutable('pnpm')
 if (typeof process.getuid === 'function' && process.getuid() === 0) {
   console.log('· 以 root 运行：请确认目标主机上的 DSH 引擎也用同一用户运行，否则它可能读不到刚装的文件')
 }
@@ -259,22 +263,25 @@ function has(bin) {
 }
 
 function requireEnv() {
-  if (!has('dsh')) {
-    console.error('找不到 dsh 命令：先在目标主机装好 DSH，并让 dsh 在 PATH 里。')
+  if (dshBin === undefined) {
+    console.error('找不到 dsh 命令（或它只在 world-writable 目录里）：先在目标主机装好 DSH，并让 dsh 出现在安全的 PATH 目录里。')
     process.exit(1)
   }
-  if (!has('pnpm')) {
-    console.error('找不到 pnpm：dsh plugin add 需要 pnpm。先装一个（npm i -g pnpm）再重试。')
+  if (pnpmBin === undefined) {
+    console.error('找不到 pnpm（或它只在 world-writable 目录里）：dsh plugin add 需要 pnpm。先装一个再重试。')
     process.exit(1)
   }
 }
 
+const BINARIES = () => ({ dsh: dshBin ?? 'dsh', pnpm: pnpmBin ?? 'pnpm' })
+
 function run(cmd, cmdArgs) {
+  const bin = BINARIES()[cmd] ?? cmd
   if (flag('dry-run')) {
-    console.log(`[dry-run] ${cmd} ${cmdArgs.map((a) => (a.includes(' ') ? JSON.stringify(a) : a)).join(' ')}`)
+    console.log(`[dry-run] ${bin} ${cmdArgs.map((a) => (a.includes(' ') ? JSON.stringify(a) : a)).join(' ')}`)
     return
   }
-  execFileSync(cmd, cmdArgs, { stdio: 'inherit' })
+  execFileSync(bin, cmdArgs, { stdio: 'inherit' })
 }
 
 // ── bridge ──────────────────────────────────────────────────────────────────

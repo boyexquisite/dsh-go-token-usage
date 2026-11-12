@@ -42,7 +42,7 @@ dsh plugin --profile web add dsh-go-token-usage
 
 - **需要 dsh-go 桥接**：原生界面只在带桥接的主机上显示——手机本机引擎自带；远程主机用 `npx dsh-go-token-usage install` 装（会从上游 GitHub 下载桥接）。经 **DSH Remote** 连接时不显示。
 - **装完要重读**：在 App 里切一下主机（或重开 App）；之后改清单（`package.json`）自动生效，改 `lib/` 里的代码要重启引擎。
-- **生成图片**：主机需要 `python3` + Pillow 和一个中文字体（Noto CJK / 文泉驿 / 微软雅黑 / PingFang 任一，否则中文标签是方块）；没有会提示；出图走延后效果，慢一点也不会丢点按。图片只显示在生成它的对话里，文件留在本机插件包 `assets/`（最近 3 张，且不会删掉其它对话正在显示的图），App 里不能长按保存，截图分享。
+- **生成图片**：主机需要 `python3` + Pillow 和一个中文字体（Noto CJK / 文泉驿 / 微软雅黑 / PingFang 任一，否则中文标签是方块）；没有会提示；python 在非常规位置时可用 `DSH_TOKEN_USAGE_PYTHON=<绝对路径>` 指定（PATH 里 world-writable 目录下的同名程序不会被采用）；出图走延后效果，慢一点也不会丢点按。图片只显示在生成它的对话里，文件留在本机插件包 `assets/`（最近 3 张，且不会删掉其它对话正在显示的图），App 里不能长按保存，截图分享。
 - **只算本机**：统计范围是本机 `$DSH_HOME` 的会话，换主机各算各的；子智能体计入「窗口 / 累计」，不计入「本对话」。
 - **第一次慢几秒**：首次运行要扫一遍历史会话（约 5~10 秒，取决于日志大小），面板数字会稍后出现。
 - **可能显示「—」**：中转不返回 cache 计数时，该对话 / 该时段的命中率显示「—」（同一主机混合官方和中转，不会把中转读成 0%）；引擎不报推理 tokens 时推理显示「—」。
@@ -60,7 +60,7 @@ dsh plugin --profile web add dsh-go-token-usage
 - **proot / 安卓 FUSE**：`readdir` 的 `d_type` 不可靠（普通文件会被报成符号链接），插件一律用 `stat` 判定类型并跟随符号链接，proot 下也能正常统计；`/sdcard` 一类 FUSE 文件系统 mtime/ctime 可能不精确，识别不到 ctime 时退回 mtime + size 判断。
 - **root**：插件只读写 `$DSH_HOME` 下的会话日志与缓存，不联网、不读凭据；缓存文件权限 `0600`、目录 `0700`。以 root 跑安装器时会提示：确保 DSH 引擎用同一用户运行，否则它可能读不到刚装的文件。
 - **无线调试 / ADB**：用 `adb shell` 或 root shell 装插件时，文件 owner 可能不是 App 引擎用户；请在引擎同一用户下执行 `dsh plugin --profile web add …`。插件不监听端口、不暴露服务。
-- **安装器供应链**：桥接按 pinned commit 下载并逐文件校验 SHA-256；`DSH_GO_BRIDGE_REF` 自定义 ref 会跳过校验并明确提示。
+- **安装器供应链**：桥接按 pinned commit 下载并逐文件校验 SHA-256；`DSH_GO_BRIDGE_REF` 自定义 ref 会跳过校验并明确提示；`dsh`/`pnpm` 也只从安全的 PATH 目录解析（跳过 world-writable 目录）。
 - **异常/恶意文件**：会话路径若是 FIFO、设备、超大文件或指向它们的符号链接会被安全跳过（单日志 128MB、单行 32MB、缓存 64MB 上限），不会卡住引擎或吃爆内存；跳过原因会在面板提示。
 - **只读文件系统 / 权限不足**：会话读得到就照常统计；缓存写不进去只会变慢（每次重新扫描），面板仍可用。
 

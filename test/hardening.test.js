@@ -4,7 +4,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
@@ -175,6 +175,66 @@ test('the scan ignores lying dirent types entirely', async () => {
     ledger.dispose()
   } finally {
     fsp.readdir = original
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('a cache directory symlinked outside $DSH_HOME is never written through', async () => {
+  const h = home()
+  const outside = mkdtempSync(join(tmpdir(), 'harden-outside-'))
+  try {
+    writeFileSync(join(h.dir, 'session.v4.jsonl.zstd'), frame([header, call()]))
+    mkdirSync(join(h.root, 'cache'), { recursive: true })
+    symlinkSync(outside, join(h.root, 'cache', 'dsh-go-token-usage'))
+    const ledger = new UsageLedger({ home: h.root, now: () => NOW })
+    await ledger.refresh()
+    ledger.noteLive('session-a', 2, NOW, { input: 1, cached: 1, cacheWrite: 0, output: 1, reasoning: 0, calls: 1 }, 'm1', 1, 'p', 2)
+    ledger.dispose()
+    const { readdirSync } = await import('node:fs')
+    assert.deepEqual(readdirSync(outside), [], 'nothing may be written outside the home')
+    await ledger.refresh()
+    assert.equal(tokens(ledger), 118)
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('a directory with too many generations is bounded and still scans', async () => {
+  const h = home()
+  try {
+    for (let version = 1; version <= 20; version += 1) {
+      const body = frame([header, call(version)])
+      writeFileSync(join(h.dir, `session.v${version}.jsonl.zstd`), body)
+    }
+    const ledger = new UsageLedger({ home: h.root, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(tokens(ledger), 115, 'the newest generation is still counted')
+    assert.equal(ledger.records.size <= 16, true, 'candidate generations are bounded')
+    ledger.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('a cache written by an older build is tightened to private modes on load', { skip: !POSIX && 'posix modes only' }, async () => {
+  const h = home()
+  try {
+    writeFileSync(join(h.dir, 'session.v4.jsonl.zstd'), frame([header, call()]))
+    const first = new UsageLedger({ home: h.root, now: () => NOW })
+    await first.refresh()
+    first.dispose()
+    const fs = await import('node:fs')
+    const dir = join(h.root, 'cache', 'dsh-go-token-usage')
+    const file = join(dir, 'index.json')
+    fs.chmodSync(file, 0o644)
+    fs.chmodSync(dir, 0o755)
+    const second = new UsageLedger({ home: h.root, now: () => NOW })
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600)
+    assert.equal(fs.statSync(dir).mode & 0o777, 0o700)
+    assert.equal(tokens(second), 115)
+    second.dispose()
+  } finally {
     rmSync(h.root, { recursive: true, force: true })
   }
 })
