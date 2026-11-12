@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, cpSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, cpSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
@@ -245,6 +245,32 @@ test('a host with no logs at all says so; a healthy host says nothing extra', as
     assert.equal(data.historyNote, '')
     assert.ok(data.updated.startsWith('已更新'))
     assert.ok(!data.updated.includes('·'))
+  } finally {
+    ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('verifyLine: a live call the log already holds is not a diff', async () => {
+  // The engine can persist a settlement before the next scan folds it. The panel
+  // counts it as a live entry, the recount counts it in the log: still one call,
+  // so Verify must not report the pending tokens as a difference.
+  const home = homeWithLog()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  try {
+    appendFileSync(
+      join(home, 'sessions', 'proj', 'session-aaa', 'session.v4.jsonl.zstd'),
+      zlib.zstdCompressSync(Buffer.from(call(4, 4, 40, 4000, 20) + '\n', 'utf8')),
+    )
+    ledger.noteLive('session-aaa', 4, NOW, { input: 40, cached: 4000, cacheWrite: 0, output: 20, reasoning: 0, calls: 1 }, 'm1', 4, 'p')
+    const recount = await ledger.recount()
+    const comparison = ledger.compareRecount(recount)
+    assert.equal(comparison.unexplainedTokens, 0, JSON.stringify(comparison))
+    assert.equal(comparison.unexplainedCalls, 0)
+    assert.equal(comparison.pendingTotals.calls, 1)
+    assert.ok(verifyLine(ledger, recount, 'zh-CN').startsWith('核对：一致'))
+    assert.ok(verifyLine(ledger, recount, 'en-US').startsWith('Verified'))
   } finally {
     ledger.dispose()
     rmSync(home, { recursive: true, force: true })

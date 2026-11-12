@@ -3,7 +3,7 @@
 // the per-scope image cache are caught.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readdirSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
@@ -89,6 +89,12 @@ test('refresh and verify actions answer in the requested locale', async () => {
     const refresh = captures.panel.actions.refresh({}, { locale: 'en-US' })
     assert.ok(refresh.pending && refresh.result)
     assert.deepEqual(await refresh.result(), { toast: 'Refreshed' })
+    // The engine appended a call after the last scan. Verify refreshes first, so
+    // the fresh comparison is consistent instead of a fake "diff" on stale rows.
+    appendFileSync(
+      join(home, 'sessions', 'proj', 'session-aaa', 'session.v4.jsonl.zstd'),
+      z([call(3, 3, 30, 2700, 7)]),
+    )
     const verify = captures.panel.actions.verify({}, { locale: 'en-US' })
     const effects = await verify.result()
     assert.match(effects[0].text, /^Verified · /)
