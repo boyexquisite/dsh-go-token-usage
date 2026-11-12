@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
@@ -36,8 +38,31 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          PREVIOUS=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          {
+            echo "## dsh-go-token-usage ${GITHUB_REF_NAME}"
+            echo
+            if [ -n "$PREVIOUS" ]; then
+              echo "### Changes since ${PREVIOUS}"
+              git log --pretty='- %s (%h)' "${PREVIOUS}..${GITHUB_REF_NAME}"
+            else
+              echo "### Changes"
+              git log --pretty='- %s (%h)' "${GITHUB_REF_NAME}"
+            fi
+            echo
+            echo "### Install"
+            echo '```sh'
+            echo 'npx dsh-go-token-usage install'
+            echo '```'
+            echo
+            echo "Counted from the host's own session logs: no account, no network, no estimates."
+          } > /tmp/release-notes.md
       - name: GitHub release
         if: startsWith(github.ref, 'refs/tags/')
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag || echo "release already exists"
+        run: |
+          gh release create "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md --verify-tag || gh release edit "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
