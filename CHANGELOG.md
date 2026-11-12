@@ -1,5 +1,16 @@
 # Changelog / 更新日志
 
+## 0.2.7
+
+### 中文
+
+- 面板每段卡片的标题行字号从 `subtitle` 缩到 `body`：窄屏下「本对话 29.3M tokens」原来会折成两行，和累计/今日不齐；现在五段标题都能一行放下。
+
+### English
+
+- The per-section headline now uses the `body` size instead of `subtitle`: on narrow screens
+  "This chat 29.3M tokens" used to wrap onto a second line while the other sections did not.
+
 ## 0.2.6
 
 ### 中文

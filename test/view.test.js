@@ -62,7 +62,7 @@ test('usageView: five aligned cards in the requested order', async () => {
       assert.equal(card.style.card, 'tinted')
       assert.equal(card.style.padding, 'M')
       const headline = card.children[0]
-      assert.equal(headline.style.size, 'subtitle')
+      assert.equal(headline.style.size, 'body')
       assert.ok(headline.spans.some((span) => typeof span.text === 'string' && span.text.includes('tokens')))
       const kv = card.children.find((c) => c.type === 'keyValue')
       const labels = kv.items.map((item) => item.label)
