@@ -34,48 +34,50 @@ function homeWithLog() {
 
 const collect = (node, type, out = []) => {
   if (node === null || typeof node !== 'object') return out
+  if (Array.isArray(node)) {
+    for (const item of node) collect(item, type, out)
+    return out
+  }
   if (node.type === type) out.push(node)
   for (const value of Object.values(node)) collect(value, type, out)
   return out
 }
 
-test('usageView: panel renders in a chat and in All features', async () => {
+const sections = (view) => view.children.filter((c) => c.type === 'stack')
+
+test('usageView: five coloured cards in the requested order, no top annotation', async () => {
   const home = homeWithLog()
   const ledger = new UsageLedger({ home, now: () => NOW })
   await ledger.refresh()
   try {
     const chat = usageView({ sessionId: 'session-aaa' }, { locale: 'zh-CN' })
-    assert.equal(chat.type, 'stack')
-    assert.equal(collect(chat, 'panel').length, 0)
-    assert.equal(collect(chat, 'metric').length >= 6, true)
-    const labels = collect(chat, 'metric').map((m) => m.label)
-    assert.ok(labels.includes('今日'))
-    assert.ok(labels.includes('总量'))
-    assert.ok(collect(chat, 'text').some((t) => t.text.includes('缓存（近 30 天）')))
-    assert.ok(collect(chat, 'text').some((t) => t.text.includes('单位 tokens')))
-    // 未缓存输入和输入合计必须分开展示，避免把「未缓存输入」看成全部输入
-    const keys = collect(chat, 'keyValue').flatMap((kv) => kv.items.map((row) => row[0]))
-    assert.ok(keys.includes('近 30 天'))
-    assert.ok(keys.includes('未缓存输入'))
-    assert.ok(keys.includes('输入合计'))
-    assert.ok(keys.includes('其中推理'))
-    assert.ok(collect(chat, 'chart').length === 1)
-    assert.equal(collect(chat, 'chart')[0].kind, 'bar')
+    assert.equal(chat.v, 2)
+    assert.equal(chat.children[0].type, 'stack', 'the first thing is the first card, not a note')
+    assert.deepEqual(sections(chat).map((c) => c.children[0].text), ['累计', '本对话', '今日', '近 7 天', '近 30 天'])
+    const colors = sections(chat).map((c) => c.style.background)
+    assert.deepEqual(colors, ['blue', 'green', 'orange', 'teal', 'violet'])
+    assert.equal(new Set(colors).size, 5)
+    for (const card of sections(chat)) {
+      assert.equal(card.style.card, 'tinted')
+      const row = card.children.find((c) => c.type === 'row')
+      assert.equal(row.children.length, 3, 'each card shows total / hit rate / calls')
+      assert.equal(row.children[0].caption, 'tokens')
+      assert.equal(row.children[2].caption, '次')
+    }
+    assert.equal(collect(chat, 'chart').length, 1)
+    assert.equal(collect(chat, 'metric').length, 15)
+    assert.ok(JSON.stringify(chat).length < 32 * 1024)
 
     const features = usageView({}, { locale: 'en-US' })
-    assert.ok(collect(features, 'metric').map((m) => m.label).includes('Today'))
-    assert.ok(collect(features, 'text').some((t) => t.text === 'All time'))
-    assert.ok(collect(features, 'metric').map((m) => m.label).includes('Total'))
-
-    const json = JSON.stringify(chat)
-    assert.ok(json.length < 32 * 1024, 'panel view stays under the 32 KiB budget')
+    assert.deepEqual(sections(features).map((c) => c.children[0].text), ['All time', 'Today', 'Last 7 days', 'Last 30 days'])
+    assert.ok(collect(features, 'metric').length === 12)
   } finally {
     ledger.dispose()
     rmSync(home, { recursive: true, force: true })
   }
 })
 
-test('usageData: windows, chart series and models are filled from the log', async () => {
+test('usageData: windows, averages over days with calls, chart series and models', async () => {
   const home = homeWithLog()
   const ledger = new UsageLedger({ home, now: () => NOW })
   await ledger.refresh()
@@ -88,11 +90,32 @@ test('usageData: windows, chart series and models are filled from the log', asyn
     assert.equal(data.session.inputTotal, '6.06k')
     assert.equal(data.session.calls, '3')
     assert.equal(data.session.reasoning, '—') // engine reported no reasoning tokens
-    assert.equal(data.models[0].title, 'm1')
     assert.equal(data.month.hit, '99%')
     assert.equal(data.month.days, '1') // every call in this fixture is "today"
     assert.equal(data.month.daily, '6.09k') // average over the days that have calls
+    assert.equal(data.week.days, '1')
+    assert.equal(data.models[0].title, 'm1')
     assert.ok(data.updated.startsWith('已更新'))
+  } finally {
+    ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('breakdowns stay in the panel and keep units out of the numbers', async () => {
+  const home = homeWithLog()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  try {
+    const chat = usageView({ sessionId: 'session-aaa' }, { locale: 'zh-CN' })
+    const keys = collect(chat, 'keyValue').flatMap((kv) => kv.items.map((row) => row[0]))
+    assert.ok(keys.includes('未缓存输入'))
+    assert.ok(keys.includes('输入合计'), 'uncached input must not look like all the input')
+    assert.ok(keys.includes('覆盖天数'))
+    assert.ok(keys.includes('日均'))
+    assert.ok(keys.includes('其中推理'))
+    const metrics = collect(chat, 'metric')
+    assert.ok(metrics.every((m) => typeof m.value === 'object' && m.value.$ !== undefined))
   } finally {
     ledger.dispose()
     rmSync(home, { recursive: true, force: true })

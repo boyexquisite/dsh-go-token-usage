@@ -46,7 +46,7 @@ test('cacheHitRate: prompt = uncached + cache reads + cache writes', () => {
   assert.equal(percent(1), '100%')
 })
 
-test('compact: k / M / G boundaries', () => {
+test('compact: k / M / B boundaries', () => {
   assert.equal(compact(980), '980')
   assert.equal(compact(8_823), '8.82k')
   assert.equal(compact(12_400), '12.4k')
@@ -54,7 +54,7 @@ test('compact: k / M / G boundaries', () => {
   assert.equal(compact(999_600), '1M') // 999.6k rounds up a unit instead of printing 1000k
   assert.equal(compact(1_250_000), '1.25M')
   assert.equal(compact(174_920_000), '175M')
-  assert.equal(compact(3_590_000_000), '3.59G')
+  assert.equal(compact(3_590_000_000), '3.59B')
   assert.equal(compact(0), '0')
   assert.equal(compact(-1), '—')
 })
