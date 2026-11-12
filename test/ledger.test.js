@@ -98,7 +98,7 @@ test('per-turn totals and model totals are kept per chat and per day', async () 
     const turns = ledger.sessionTurnsOf('session-aaa')
     assert.equal(turns.get(1).calls, 2)
     assert.equal(turns.get(2).calls, 1)
-    assert.deepEqual(ledger.todayModels(), [['m1', 72]])
+    assert.deepEqual(ledger.todayModels(), [['p', 'm1', 72]])
     ledger.dispose()
   } finally {
     rmSync(home, { recursive: true, force: true })

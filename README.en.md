@@ -12,7 +12,7 @@ Everything is counted from the host's own session logs — read-only, no network
 |---|---|
 | Status strip above the composer | `Chat 19.8M · today 155M`; tap to open the panel |
 | Turn note after each reply | Tokens and cache hits of that turn, e.g. `315k · cache 86%` |
-| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Five coloured cards in the order **All time → This chat → Today → Last 7 days → Last 30 days** (blue, green, orange, teal, violet). Every card shares one skeleton: a headline with title + total + tokens, then left/right aligned rows for hit rate, calls, input total, output; the 7- and 30-day cards add daily average and days covered, and the 30-day card ends with uncached input / cache reads / cache writes / reasoning. Today adds one line of models, Last 7 days adds a bar chart. The five cards line up vertically with normal spacing; copy summary and refresh at the bottom |
+| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Five coloured cards in the order **All time → This chat → Today → Last 7 days → Last 30 days** (blue, green, orange, teal, violet). Every card shares one skeleton: a headline with title + total + tokens, then left/right aligned rows for hit rate, calls, input total, output; the 7- and 30-day cards add daily average and days covered, and the 30-day card ends with uncached input / cache reads / cache writes / reasoning. Today ends with a 「Models today」 list (model + source + tokens); Last 7 days adds a bar chart. The five cards line up vertically with normal spacing; copy summary and refresh at the bottom |
 
 Numbers follow the engine's own accounting:
 
@@ -23,9 +23,11 @@ Numbers follow the engine's own accounting:
 - Numbers use three significant digits (`8.82k` / `1.25M` / `3.59B`); each metric carries its unit (tokens / calls);
 - Type: 20 for card titles, 16 for rows, 13 for notes; values and units share one line;
 - All five cards use the same skeleton with left-aligned labels and right-aligned values, so long labels never push the numbers away;
+- Model totals are keyed by provider and model, so the same model name from an official account and from a relay shows up as two separate sources;
 - “Daily avg” divides by the days that actually have calls and shows the day count, instead of spreading over 30 days;
 - Reasoning shows an em dash when the engine does not report it, never a fake 0;
-- Hit rates keep one decimal, so 99.7% never reads as 100%.
+- Hit rates keep one decimal, so 99.7% never reads as 100%;
+- Models today are labelled by source: `official · account` (deepseek-account), `official · API key`, `subscription · command-code`, `relay · <name>` (custom-*), anything else as `third-party · <provider>`. Edit `sourceLabel` in `lib/view.js` to change the mapping.
 
 ## Install
 
