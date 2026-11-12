@@ -12,7 +12,7 @@ Everything is counted from the host's own session logs — read-only, no network
 |---|---|
 | Status strip above the composer | `Chat 19.8M · today 155M`; tap to open the panel |
 | Turn note after each reply | Tokens and cache hits of that turn, e.g. `315k · cache 86%` |
-| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Five coloured cards in the order **All time → This chat → Today → Last 7 days → Last 30 days** (blue, green, orange, teal, violet). Each shows total / hit rate / calls; Today adds today's models; Last 7 days adds a bar chart, daily average and days covered; Last 30 days adds daily average, days covered and the uncached input / cache reads / cache writes / input total / output / reasoning breakdown. Copy summary and refresh at the bottom |
+| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Five coloured cards in the order **All time → This chat → Today → Last 7 days → Last 30 days** (blue, green, orange, teal, violet). Each card puts the title and total on one row, hit rate and calls side by side below, then a compact inline line for input total · output; Today adds one line of today's models; Last 7 days adds a bar chart plus daily average and days covered; Last 30 days adds daily average, days covered and a two-column breakdown. The page scrolls, with copy summary and refresh at the bottom |
 
 Numbers follow the engine's own accounting:
 
@@ -21,6 +21,7 @@ Numbers follow the engine's own accounting:
 - "This chat" counts the current session only; the windows count every session on this host (subagents included);
 - Day boundaries follow the host's local calendar;
 - Numbers use three significant digits (`8.82k` / `1.25M` / `3.59B`); each metric carries its unit (tokens / calls);
+- Type is one step smaller (16 for titles and numbers, 13 for notes) and metrics/breakdowns sit in two columns to save vertical space;
 - “Daily avg” divides by the days that actually have calls and shows the day count, instead of spreading over 30 days;
 - Reasoning shows an em dash when the engine does not report it, never a fake 0;
 - Hit rates keep one decimal, so 99.7% never reads as 100%.
