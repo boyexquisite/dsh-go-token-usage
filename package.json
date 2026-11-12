@@ -90,18 +90,6 @@
             "features",
             "chat.panel"
           ]
-        },
-        {
-          "id": "usage-image",
-          "title": {
-            "zh": "用量图",
-            "en": "Usage image"
-          },
-          "icon": "image",
-          "placement": [
-            "features",
-            "chat.panel"
-          ]
         }
       ]
     },

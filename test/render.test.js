@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import zlib from 'node:zlib'
 import { UsageLedger } from '../lib/ledger.js'
 import { canRender, cardData, renderUsageImage } from '../lib/render.js'
-import { usageImageData, usageImageView } from '../lib/view.js'
+import { imagePanelData, usageView } from '../lib/view.js'
 
 const NOW = new Date(2026, 10, 12, 12, 0, 0).getTime()
 const call = (seq, provider, model, input, cached, output) =>
@@ -40,25 +40,25 @@ const collect = (node, type, out = []) => {
   return out
 }
 
-test('usageImageView: one image bound to data, regenerate and back actions', () => {
-  const view = usageImageView({}, { locale: 'zh-CN' })
+test('usageView: one panel with the image at the bottom and four actions', () => {
+  const view = usageView({}, { locale: 'zh-CN' })
   assert.equal(view.v, 2)
   const image = collect(view, 'image')[0]
-  assert.deepEqual(image.src, { $: 'data.src' })
-  assert.deepEqual(image.aspect, { $: 'data.aspect' })
+  assert.deepEqual(image.src, { $: 'data.imageSrc' })
+  assert.deepEqual(image.aspect, { $: 'data.imageAspect' })
   const actions = collect(view, 'actions')[0].items.map((item) => item.action)
-  assert.deepEqual(actions, ['export', 'copy', 'usage'])
-  assert.ok(JSON.stringify(view).length < 4096)
+  assert.deepEqual(actions, ['copy', 'export', 'verify', 'refresh'])
+  assert.ok(JSON.stringify(view).length < 32 * 1024)
 })
 
-test('usageImageData: empty prompt until a render exists', () => {
-  const empty = usageImageData(null, 'zh-CN')
-  assert.equal(empty.src, '')
-  assert.ok(empty.caption.includes('还没有出图'))
-  const ready = usageImageData({ src: 'asset:usage-20260101-000000.png', aspect: 0.66, caption: '今日 1M tokens' }, 'zh-CN')
-  assert.equal(ready.src, 'asset:usage-20260101-000000.png')
-  assert.equal(ready.aspect, 0.66)
-  assert.equal(ready.caption, '今日 1M tokens')
+test('imagePanelData: placeholder until a render exists, then the asset reference', () => {
+  const empty = imagePanelData(null, 'zh-CN')
+  assert.equal(empty.imageSrc, 'asset:placeholder.png')
+  assert.ok(empty.imageCaption.includes('导出图片'))
+  const ready = imagePanelData({ src: 'asset:usage-20260101-000000.png', aspect: 0.66, caption: '今日 1M tokens' }, 'zh-CN')
+  assert.equal(ready.imageSrc, 'asset:usage-20260101-000000.png')
+  assert.equal(ready.imageAspect, 0.66)
+  assert.equal(ready.imageCaption, '今日 1M tokens')
 })
 
 test('cardData: rows, colors and provider labels for the image', async () => {
