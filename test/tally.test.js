@@ -80,3 +80,25 @@ test('sumDays: works with a Map and skips missing days', () => {
   assert.equal(sum.output, 5)
   assert.equal(sum.calls, 3)
 })
+
+import { settlementOf, lastUsageSample } from '../lib/tally.js'
+
+test('settlementOf: message usage, attempt stream sample, compaction excluded', () => {
+  const message = { type: 'assistant/message', seq: 4, time: 1000, data: { turn: 2, step: 3, usage: { inputTokens: 1, cacheReadTokens: 2, cacheWriteTokens: 3, outputTokens: 4, reasoningTokens: 5 }, message: { source: { provider: 'deepseek', model: 'm1' } } } }
+  const s = settlementOf(message)
+  assert.deepEqual(s.totals, { input: 1, cached: 2, cacheWrite: 3, output: 4, reasoning: 5, calls: 1 })
+  assert.equal(s.model, 'm1')
+  assert.equal(s.provider, 'deepseek')
+  assert.equal(s.turn, 2)
+  assert.equal(s.step, 3)
+
+  const attempt = { type: 'assistant/attempt', seq: 5, time: 1001, data: { turn: 2, step: 3, stream: [{ chunk: { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } } }, { chunk: { type: 'usage', usage: { inputTokens: 7, cacheReadTokens: 70, outputTokens: 3 } } }] } }
+  const a = settlementOf(attempt)
+  assert.equal(totalTokens(a.totals), 80)
+  assert.equal(a.model, '')
+  assert.equal(a.cacheCounters, true)
+
+  assert.equal(settlementOf({ type: 'compaction/summary', seq: 9, data: { usage: { inputTokens: 5 } } }), undefined)
+  assert.equal(settlementOf({ type: 'user/message', seq: 1 }), undefined)
+  assert.equal(lastUsageSample([{ chunk: { type: 'text' } }]), undefined)
+})

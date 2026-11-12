@@ -61,9 +61,12 @@ No account, key or credential is read, and nothing is sent over the network at r
 <details>
 <summary>Details and known limits</summary>
 
-- Totals: `tokens = uncached input + cache reads + cache writes + output`, matching the engine; hit rate = cache reads ÷ prompt tokens;
+- Totals: `tokens = uncached input + cache reads + cache writes + output`, matching the engine's own token-usage projection; hit rate = cache reads ÷ prompt tokens;
+- Retried/failed model calls count too (the engine counts them): the last usage sample of that `assistant/attempt` stream; a re-settlement of the same turn+step replaces the previous one, while a settlement after `llm/retry-started` is a new call; compaction summaries are not counted (the engine does not count them either);
 - "This chat" counts the session itself; subagent calls count in the windows and the total;
-- Fork/seed logs skip the inherited prefix (the `session/end-seed` marker), so nothing is counted twice;
+- Fork/seed logs skip the inherited prefix (the `session/end-seed` marker), so nothing is counted twice; if the parent's own log is gone from this host, that prefix is not restored;
+- Sessions are deduplicated by id: moving/copying `$DSH_HOME`, or one session appearing in two project directories, counts once;
+- Logs are parsed as a stream, so memory stays bounded instead of growing with the file;
 - A relay that omits cache counters shows a dash instead of a fake 0%; unreported reasoning shows a dash too;
 - The first run scans existing sessions (~5 s), then only changed files are read; the cache in `$DSH_HOME/cache/dsh-go-token-usage/index.json` holds numbers, model names, local session-file paths and live calls not yet flushed to disk;
 - Each session is read from its current format generation only (highest version in the file name), so older generations left by a format migration are not counted twice; uncompressed logs (`compression: none`) are read too;
