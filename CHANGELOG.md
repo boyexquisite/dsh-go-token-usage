@@ -1,5 +1,20 @@
 # Changelog / 更新日志
 
+## 0.2.6
+
+### 中文
+
+- 修复「核对」误报：一笔调用已经写进会话日志、插件还没来得及扫描时，面板和核对会各算一次、再减一次，显示「差 N tokens / N 次」。现在核对前先补扫日志，并且只把超出重算快照的调用算作未解释差额。
+- 顺带修 `text` 风格的错误消息与两处内部清理，无行为变化。
+
+### English
+
+- Fix a false mismatch in Verify: when a call was already written to the session logs but the
+  ledger had not scanned it yet, the panel and the recount counted it twice and then subtracted
+  it again, reporting "N tokens / N calls off". Verify now refreshes the scan first and only
+  counts pending calls beyond the recount snapshot as unexplained.
+- Internal cleanup in the text-style error message and two small helpers; no behaviour change.
+
 ## 0.2.5
 
 ### 中文
