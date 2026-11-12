@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, appendFileSync, cpSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, appendFileSync, cpSync, readFileSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
@@ -341,7 +341,7 @@ test('the same session copied into two project directories counts once', async (
     const ledger = new UsageLedger({ home, now: () => NOW })
     await ledger.refresh()
     assert.equal(totalTokens(ledger.allTime()), 115)
-    assert.equal(ledger.records.size, 1, 'an alias record is dropped')
+    assert.equal(ledger.meta().files, 1, 'the copy is an alias, not another session')
     ledger.dispose()
   } finally {
     rmSync(home, { recursive: true, force: true })
@@ -465,6 +465,90 @@ test('structurally broken cached records are ignored instead of folded', async (
     assert.equal(totalTokens(ledger.allTime()), 115)
     assert.equal(ledger.records.size, 1, 'only the real log is a record')
     assert.equal(ledger.pendingCount(), 0)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('an empty or unreadable newest generation falls back to the older one', async () => {
+  const variants = {
+    'zero-plain': () => writeFileSync(join(globalThis.__dir, 'session.v4.jsonl'), ''),
+    'zero-zstd': () => writeFileSync(join(globalThis.__dir, 'session.v4.jsonl.zstd'), Buffer.alloc(0)),
+    'truncated-zstd': () => {
+      const whole = frame([header('session-aaa'), call(9, NOW, 1, 1, 1)])
+      writeFileSync(join(globalThis.__dir, 'session.v4.jsonl.zstd'), whole.subarray(0, whole.length - 6))
+    },
+  }
+  for (const [name, writeNewest] of Object.entries(variants)) {
+    const home = mkdtempSync(join(tmpdir(), `dsh-gen-${name}-`))
+    try {
+      const dir = join(home, 'sessions', 'proj', 'session-aaa')
+      mkdirSync(dir, { recursive: true })
+      globalThis.__dir = dir
+      writeFileSync(join(dir, 'session.v3.jsonl.zstd'), frame([header('session-aaa'), call(1, NOW, 10, 100, 5), call(2, NOW, 20, 200, 6)]))
+      writeNewest()
+      const ledger = new UsageLedger({ home, now: () => NOW })
+      await ledger.refresh()
+      assert.equal(totalTokens(ledger.allTime()), 341, `${name}: older generation still carries the history`)
+      assert.equal(ledger.allTime().calls, 2)
+      assert.equal(ledger.sourceState().lostFiles, 0)
+      ledger.dispose()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }
+})
+
+test('a readable newest generation is still the one that counts', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-gen-ok-'))
+  try {
+    const dir = join(home, 'sessions', 'proj', 'session-aaa')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'session.v3.jsonl.zstd'), frame([header('session-aaa'), call(1, NOW, 10, 100, 5), call(2, NOW, 20, 200, 6)]))
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), frame([header('session-aaa'), call(1, NOW, 10, 100, 5)]))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 115, 'the engine reads the newest generation')
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a log rewritten with the same size and mtime is re-read (ctime guard)', async () => {
+  const { home, dir } = makeHome()
+  const rawFile = join(dir, 'session.v4.jsonl')
+  try {
+    writeFileSync(rawFile, [header('session-aaa'), call(1, NOW, 10, 100, 5)].join('\n') + '\n')
+    const fixedSeconds = Math.floor(NOW / 1000)
+    utimesSync(rawFile, fixedSeconds, fixedSeconds)
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 115)
+    const originalSize = readFileSync(rawFile).length
+    // Same byte length as the original, different billed values.
+    writeFileSync(rawFile, [header('session-aaa'), call(1, NOW, 20, 900, 5)].join('\n') + '\n')
+    assert.equal(readFileSync(rawFile).length, originalSize, 'same size on purpose')
+    utimesSync(rawFile, fixedSeconds, fixedSeconds)
+    assert.equal(statSync(rawFile).mtimeMs, fixedSeconds * 1000, 'same mtime on purpose')
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 925, 'content change is picked up through ctime')
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a live call without a log position is left to the scan (no double count)', async () => {
+  const { home, file } = makeHome()
+  try {
+    writeFileSync(file, frame([header('session-aaa'), call(1, NOW, 10, 100, 5)]))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    ledger.noteLive('session-aaa', -1, NOW, { input: 7, cached: 70, cacheWrite: 0, output: 3, reasoning: 0, calls: 1 }, 'm1', 1, 'p')
+    assert.equal(ledger.pendingCount(), 0)
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 115)
     ledger.dispose()
   } finally {
     rmSync(home, { recursive: true, force: true })

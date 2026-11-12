@@ -90,8 +90,8 @@ test('renderUsageImage draws a PNG the bridge can serve', { skip: !canRender() &
     writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from([header, call(0, 'deepseek-account', 'm1', 10, 100, 5)].join('\n') + '\n', 'utf8')))
     const ledger = new UsageLedger({ home, now: () => NOW })
     await ledger.refresh()
-    const out = renderUsageImage({ ledger, scope: { sessionId: 'session-aaa' }, pkgName: 'dsh-go-token-usage', locale: 'zh-CN', now: NOW, outDir })
-    assert.match(out.src, /^asset:usage-\d{8}-\d{6}\.png$/)
+    const out = await renderUsageImage({ ledger, scope: { sessionId: 'session-aaa' }, locale: 'zh-CN', now: NOW, outDir })
+    assert.match(out.src, /^asset:usage-\d{8}-\d{6}-[a-z0-9]+\.png$/)
     assert.ok(out.aspect > 0.25 && out.aspect < 4)
     assert.ok(statSync(out.file).size > 5000, 'PNG has real pixels')
     assert.ok(out.caption.includes('tokens'))
@@ -99,5 +99,39 @@ test('renderUsageImage draws a PNG the bridge can serve', { skip: !canRender() &
   } finally {
     rmSync(home, { recursive: true, force: true })
     rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+test('cardData: unknown chat keeps a dashes row, lists six models, clips labels', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-render-edge-'))
+  try {
+    const dir = join(home, 'sessions', 'proj', 'session-aaa')
+    mkdirSync(dir, { recursive: true })
+    const header = JSON.stringify({ type: 'session', version: 4, id: 'session-aaa', createdAt: NOW, cwd: '/p' })
+    const lines = [header]
+    for (let i = 0; i < 7; i += 1) {
+      lines.push(JSON.stringify({
+        type: 'assistant/message', seq: i, time: NOW,
+        data: {
+          turn: i, step: i,
+          usage: { inputTokens: 10, cacheReadTokens: 100 + i, cacheWriteTokens: 0, outputTokens: 5 },
+          message: { source: { provider: `custom-very-long-relay-provider-name-${i}`, model: `a-very-long-model-name-${i}` } },
+        },
+      }))
+    }
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from(lines.join('\n') + '\n')))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    const data = cardData({ ledger, scope: { sessionId: 'session-unknown' }, locale: 'zh-CN', now: NOW })
+    assert.deepEqual(data.rows.map((row) => row.label), ['累计', '本对话', '今日', '近 7 天', '近 30 天'])
+    assert.equal(data.rows[1].value, '—', 'a chat with no ledger record still gets its row')
+    assert.equal(data.models.length, 6, 'the image lists the same six models as the panel')
+    for (const model of data.models) {
+      assert.ok([...model.name].length <= 28, model.name)
+      assert.ok([...model.source].length <= 18, model.source)
+    }
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
   }
 })

@@ -22,8 +22,7 @@
     "README.en.md",
     "LICENSE",
     "scripts",
-    "assets",
-    "docs"
+    "assets"
   ],
   "keywords": [
     "dsh",

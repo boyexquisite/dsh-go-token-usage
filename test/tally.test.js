@@ -42,6 +42,7 @@ test('cacheHitRate: prompt = uncached + cache reads + cache writes', () => {
   assert.equal(percent(0.634), '63%')
   assert.equal(percent(null), '—')
   assert.equal(percent(0.997), '99.7%') // a real 99.7% must not read as 100%
+  assert.equal(percent(0.9997), '>99.9%') // near-100% must not read as exactly 100%
   assert.equal(percent(0.0004), '<0.1%')
   assert.equal(percent(1), '100%')
 })

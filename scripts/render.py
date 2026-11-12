@@ -149,11 +149,13 @@ def render(data, output):
                 draw.line((x + pad, row_y - 2, right - pad, row_y - 2), fill=DIVIDER, width=1)
             name = fit(draw, model.get("name", ""), model_font, col_source - (x + pad) - 16)
             draw.text((x + pad, row_y + 10), name, font=model_font, fill=INK)
+            value = model.get("value", "")
+            value_x = right - pad - draw.textlength(value, font=model_font)
             source = model.get("source", "")
             if source:
-                draw.text((col_source, row_y + 13), source, font=model_meta_font, fill=MUTED)
-            value = model.get("value", "")
-            draw.text((right - pad - draw.textlength(value, font=model_font), row_y + 10), value, font=model_font, fill=INK)
+                source_width = value_x - col_source - 12
+                draw.text((col_source, row_y + 13), fit(draw, source, model_meta_font, source_width), font=model_meta_font, fill=MUTED)
+            draw.text((value_x, row_y + 10), value, font=model_font, fill=INK)
             row_y += 46
 
     footer = data.get("footer", "")

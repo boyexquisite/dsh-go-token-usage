@@ -20,6 +20,13 @@ if (previous === version) {
 pkg.version = version
 writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n')
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit' })
+// A dirty tree would be left out of the tag (only package.json is committed here),
+// so the published tarball would silently ship the previous code.
+const dirty = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()
+if (dirty !== '') {
+  console.error('working tree is not clean; commit the changes before releasing:\n' + dirty)
+  process.exit(1)
+}
 run('git', ['add', 'package.json'])
 run('git', ['commit', '-m', `Release ${version}`])
 run('git', ['tag', '-a', `v${version}`, '-m', `dsh-go-token-usage ${version}`])

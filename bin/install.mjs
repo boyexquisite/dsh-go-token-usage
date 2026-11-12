@@ -11,7 +11,7 @@
 // (server, PC) has to install it once. This script fetches it straight from the
 // upstream dsh-Go repository at a pinned commit — nothing is redistributed here.
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -61,12 +61,74 @@ const BRIDGE_FILES = [
   'lib/native/ws.js',
 ]
 
-const args = process.argv.slice(2)
-const command = args.find((a) => !a.startsWith('-')) ?? 'install'
-const flag = (name) => args.includes(`--${name}`)
-const value = (name, fallback) => {
-  const i = args.indexOf(`--${name}`)
-  return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback
+// ── arguments ───────────────────────────────────────────────────────────────
+// Options may appear before or after the command; unknown flags are errors
+// instead of silently starting an install.
+const COMMANDS = new Set(['install', 'bridge', 'plugin', 'status', 'help'])
+const BOOL_FLAGS = new Set(['help', 'version', 'no-bridge', 'force', 'dry-run'])
+const VALUE_FLAGS = new Set(['profile', 'from'])
+function parseArgs(raw) {
+  const parsed = { command: 'install', flags: new Set(), values: new Map() }
+  for (let i = 0; i < raw.length; i += 1) {
+    const arg = raw[i]
+    if (arg === '-h') { parsed.flags.add('help'); continue }
+    if (arg === '-v') { parsed.flags.add('version'); continue }
+    if (arg.startsWith('--')) {
+      const eq = arg.indexOf('=')
+      const name = eq === -1 ? arg.slice(2) : arg.slice(2, eq)
+      const inline = eq === -1 ? undefined : arg.slice(eq + 1)
+      if (BOOL_FLAGS.has(name)) {
+        if (inline !== undefined) throw new Error(`--${name} 不接受值`)
+        parsed.flags.add(name)
+        continue
+      }
+      if (!VALUE_FLAGS.has(name)) throw new Error(`未知选项 --${name}（用 --help 看用法）`)
+      let value = inline
+      if (value === undefined) {
+        const next = raw[i + 1]
+        if (next === undefined || next.startsWith('-')) throw new Error(`--${name} 需要一个值`)
+        value = next
+        i += 1
+      }
+      if (value === '') throw new Error(`--${name} 需要一个值`)
+      if (parsed.values.has(name)) throw new Error(`--${name} 重复了`)
+      parsed.values.set(name, value)
+      continue
+    }
+    if (!COMMANDS.has(arg)) throw new Error(`未知命令 ${arg}（可用：install / bridge / plugin / status / help）`)
+    if (parsed.command !== 'install' || parsed.commandExplicit === true) throw new Error(`命令重复：${arg}`)
+    parsed.command = arg
+    parsed.commandExplicit = true
+  }
+  return parsed
+}
+let parsed
+try {
+  parsed = parseArgs(process.argv.slice(2))
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error))
+  process.exit(2)
+}
+const command = parsed.command
+const flag = (name) => parsed.flags.has(name)
+const value = (name, fallback) => parsed.values.get(name) ?? fallback
+const versionOf = (text) => {
+  const parts = String(text).split('.').map((part) => Number.parseInt(part, 10))
+  return parts.every(Number.isFinite) ? parts : undefined
+}
+const versionAtLeast = (have, want) => {
+  const a = versionOf(have)
+  const b = versionOf(want)
+  if (a === undefined || b === undefined) return false
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0)
+  }
+  return true
+}
+
+if (flag('version')) {
+  console.log(OWN.version)
+  process.exit(0)
 }
 
 if (flag('help') || command === 'help') {
@@ -74,17 +136,19 @@ if (flag('help') || command === 'help') {
 
 Usage:
   npx ${OWN.name} install [--profile web] [--no-bridge] [--from <spec>]
+                        (an older install is upgraded automatically)
   npx ${OWN.name} bridge  [--profile web] [--force]
   npx ${OWN.name} plugin  [--profile web] [--from <spec>]
   npx ${OWN.name} status  [--profile web]
 
 Options:
+  --version         print this package version and exit
   --profile <name>  DSH profile to install into (default: web, which dsh-go uses)
   --from <spec>     install the plugin from an npm spec / tarball / directory instead
                     of the published package name
   --no-bridge       skip the bridge step
-  --force           reinstall even when already present
-  --dry-run         print the commands instead of running them
+  --force           reinstall even when already present (also upgrades)
+  --dry-run         print the plan without downloading or writing anything
 
 The status strip, panel and turn notes appear only on hosts that serve the
 dsh-go bridge: the phone app's built-in engine has it, a remote host needs it
@@ -95,6 +159,19 @@ once (this script installs it).`)
 // ── environment ─────────────────────────────────────────────────────────────
 
 const profile = value('profile', 'web')
+if (!/^[A-Za-z0-9._-]+$/.test(profile) || profile === '.' || profile === '..') {
+  console.error(`profile 名不合法：${profile}`)
+  process.exit(2)
+}
+const fromSpec = value('from', undefined)
+if (fromSpec !== undefined && fromSpec.startsWith('-')) {
+  console.error('--from 的值不能以 - 开头')
+  process.exit(2)
+}
+if (process.env.DSH_GO_BRIDGE_REF !== undefined && !/^[0-9a-f]{40}$/i.test(process.env.DSH_GO_BRIDGE_REF)) {
+  console.error('DSH_GO_BRIDGE_REF 必须是 40 位 commit SHA')
+  process.exit(2)
+}
 const dshHome = String(process.env.DSH_HOME || '').trim() || join(homedir(), '.dsh')
 const pluginsDir = join(dshHome, 'dsh-go', 'plugins')
 const bridgeDir = join(pluginsDir, 'dsh-go-bridge')
@@ -114,8 +191,15 @@ function deps() {
   return profilePkg()?.dependencies ?? {}
 }
 
+function bridgeComplete() {
+  return BRIDGE_FILES.every((file) => existsSync(join(bridgeDir, file)))
+}
+
 function bridgePresent() {
-  return deps()['dsh-go-bridge'] !== undefined || existsSync(join(bridgeDir, 'package.json'))
+  if (deps()['dsh-go-bridge'] !== undefined) return true
+  // A half-finished download (often interrupted on a bad network) must not look
+  // installed, otherwise the second run skips the files that are still missing.
+  return bridgeComplete()
 }
 
 function pluginPresent() {
@@ -152,34 +236,50 @@ function run(cmd, cmdArgs) {
 
 // ── bridge ──────────────────────────────────────────────────────────────────
 
+async function fetchBridgeFile(file) {
+  const url = `https://raw.githubusercontent.com/${BRIDGE_REPO}/${BRIDGE_REF}/${BRIDGE_SRC}/${file}`
+  let lastError
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const res = await fetch(url, { redirect: 'follow' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const body = Buffer.from(await res.arrayBuffer())
+      if (body.length === 0) throw new Error('空文件')
+      return body
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt))
+    }
+  }
+  throw new Error(`下载 ${file} 失败（${lastError.message}）`)
+}
+
 async function downloadBridge() {
   console.log(`→ 从上游 ${BRIDGE_REPO}@${BRIDGE_REF.slice(0, 7)} 下载 dsh-go 桥接…`)
-  let done = 0
-  for (const file of BRIDGE_FILES) {
-    const url = `https://raw.githubusercontent.com/${BRIDGE_REPO}/${BRIDGE_REF}/${BRIDGE_SRC}/${file}`
-    const target = join(bridgeDir, file)
-    let lastError
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const res = await fetch(url, { redirect: 'follow' })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const body = Buffer.from(await res.arrayBuffer())
-        await mkdir(dirname(target), { recursive: true })
-        await writeFile(target, body)
-        lastError = undefined
-        break
-      } catch (error) {
-        lastError = error
-        await new Promise((resolve) => setTimeout(resolve, 400 * attempt))
-      }
+  // Download into a staging directory and only swap it in once every file is
+  // there: a half-finished download must never look installed.
+  const stage = `${bridgeDir}.partial-${process.pid}`
+  await rm(stage, { recursive: true, force: true })
+  try {
+    for (const [index, file] of BRIDGE_FILES.entries()) {
+      const body = await fetchBridgeFile(file)
+      const target = join(stage, file)
+      await mkdir(dirname(target), { recursive: true })
+      await writeFile(target, body)
+      if ((index + 1) % 8 === 0) console.log(`  ${index + 1}/${BRIDGE_FILES.length}`)
     }
-    if (lastError !== undefined) {
-      throw new Error(`下载 ${file} 失败（${lastError.message}）。网络不通时可以先在别处拷一份 dsh-go-bridge 到 ${bridgeDir}`)
-    }
-    done += 1
-    if (done % 8 === 0) console.log(`  ${done}/${BRIDGE_FILES.length}`)
+    const pkg = JSON.parse(await readFile(join(stage, 'package.json'), 'utf8'))
+    if (pkg.name !== 'dsh-go-bridge') throw new Error(`下载内容不是 dsh-go-bridge（name=${pkg.name}）`)
+    const missing = BRIDGE_FILES.filter((file) => !existsSync(join(stage, file)))
+    if (missing.length > 0) throw new Error(`下载不完整：缺 ${missing.join(', ')}`)
+    await mkdir(pluginsDir, { recursive: true })
+    await rm(bridgeDir, { recursive: true, force: true })
+    await rename(stage, bridgeDir)
+    console.log(`  ${BRIDGE_FILES.length}/${BRIDGE_FILES.length} 完成`)
+  } catch (error) {
+    await rm(stage, { recursive: true, force: true })
+    throw new Error(`${error.message}。网络不通时可先在别处拷一份 dsh-go-bridge 到 ${bridgeDir}`)
   }
-  console.log(`  ${BRIDGE_FILES.length}/${BRIDGE_FILES.length} 完成`)
 }
 
 async function ensureBridge() {
@@ -187,12 +287,25 @@ async function ensureBridge() {
     console.log('· 跳过桥接（--no-bridge）')
     return
   }
-  if (bridgePresent() && !flag('force')) {
+  if (appRuntime && !flag('force')) {
+    console.log('· 这是 dsh-go 手机本机引擎，桥接自带，跳过')
+    return
+  }
+  const registered = deps()['dsh-go-bridge'] !== undefined
+  const complete = bridgeComplete()
+  if (complete && registered && !flag('force')) {
     console.log('· 桥接已装，跳过')
     return
   }
-  if (appRuntime && !flag('force')) {
-    console.log('· 这是 dsh-go 手机本机引擎，桥接自带，跳过')
+  if (complete && !flag('force')) {
+    console.log('→ 桥接文件已就位，补充注册到 profile')
+    if (!flag('dry-run')) run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
+    else run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
+    return
+  }
+  if (flag('dry-run')) {
+    console.log(`[dry-run] download ${BRIDGE_FILES.length} files from ${BRIDGE_REPO}@${BRIDGE_REF.slice(0, 7)} → ${bridgeDir}`)
+    run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
     return
   }
   await downloadBridge()
@@ -201,12 +314,32 @@ async function ensureBridge() {
 
 // ── plugin ──────────────────────────────────────────────────────────────────
 
-async function ensurePlugin() {
-  if (pluginPresent() && !flag('force')) {
-    console.log(`· ${OWN.name} 已装，跳过（要重装加 --force）`)
-    return
+function installedPluginVersion() {
+  try {
+    return JSON.parse(readFileSync(join(profileDir, 'node_modules', OWN.name, 'package.json'), 'utf8')).version
+  } catch {
+    return undefined
   }
-  const from = value('from', undefined)
+}
+
+async function ensurePlugin() {
+  const from = fromSpec
+  const force = flag('force') || from !== undefined
+  const installed = installedPluginVersion()
+  const depVersion = typeof deps()[OWN.name] === 'string' ? deps()[OWN.name] : undefined
+  if (!force) {
+    if (installed !== undefined) {
+      if (versionAtLeast(installed, OWN.version)) {
+        console.log(`· ${OWN.name} ${installed} 已是最新，跳过（要重装加 --force）`)
+        return
+      }
+      console.log(`→ 升级 ${OWN.name} ${installed} → ${OWN.version}`)
+    } else if (depVersion !== undefined && versionAtLeast(depVersion, OWN.version)) {
+      console.log(`· ${OWN.name} 已在 profile 注册（${depVersion}）但 node_modules 不完整，重装`)
+    } else if (pluginPresent()) {
+      console.log(`→ ${OWN.name} 已注册旧版本${depVersion === undefined ? '' : ` ${depVersion}`}，升级到 ${OWN.version}`)
+    }
+  }
   let spec = from ?? `${OWN.name}@${OWN.version}`
   // Running from a git checkout (not an npx cache): install that checkout directly.
   if (from === undefined && existsSync(join(ROOT, '.git'))) spec = ROOT
@@ -214,19 +347,32 @@ async function ensurePlugin() {
   try {
     run('dsh', ['plugin', '--profile', profile, 'add', spec])
   } catch (error) {
-    if (from !== undefined || spec === ROOT) throw error
-    console.log('  npm 安装失败，改从本脚本所在的包目录装（若是 npx 缓存，清理缓存后需要重装）')
-    run('dsh', ['plugin', '--profile', profile, 'add', ROOT])
+    if (from !== undefined || spec === ROOT || flag('dry-run')) throw error
+    // Never leave the profile linked to an npx cache directory: copy the package
+    // into the host plugin dir and install from there.
+    const stable = join(pluginsDir, OWN.name)
+    console.log(`  npm 安装失败，复制当前包到 ${stable} 后再装（不依赖 npx 缓存）`)
+    await mkdir(pluginsDir, { recursive: true })
+    await rm(stable, { recursive: true, force: true })
+    await cp(ROOT, stable, { recursive: true })
+    run('dsh', ['plugin', '--profile', profile, 'add', stable])
   }
 }
 
 // ── status ──────────────────────────────────────────────────────────────────
 
 function status() {
+  const installed = installedPluginVersion()
+  const depVersion = typeof deps()[OWN.name] === 'string' ? deps()[OWN.name] : undefined
   console.log(`DSH_HOME     ${dshHome}`)
   console.log(`profile      ${profile}`)
-  console.log(`桥接         ${appRuntime ? '本机引擎自带' : bridgePresent() ? '已装' : '未装'}`)
-  console.log(`用量插件     ${pluginPresent() ? '已装' : '未装'}`)
+  if (appRuntime) console.log('桥接         本机引擎自带')
+  else if (bridgeComplete()) console.log(`桥接         已装（${BRIDGE_FILES.length} 个文件完整）`)
+  else if (existsSync(bridgeDir)) console.log('桥接         不完整，重跑 install 补齐')
+  else console.log('桥接         未装')
+  if (installed !== undefined) console.log(`用量插件     已装 ${installed}`)
+  else if (depVersion !== undefined) console.log(`用量插件     已注册 ${depVersion}（node_modules 缺失，重跑 install）`)
+  else console.log('用量插件     未装')
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
@@ -234,11 +380,6 @@ function status() {
 if (command === 'status') {
   status()
   process.exit(0)
-}
-
-if (!['install', 'bridge', 'plugin'].includes(command)) {
-  console.error(`不认识的命令 ${command}；用 --help 看用法`)
-  process.exit(1)
 }
 
 requireEnv()

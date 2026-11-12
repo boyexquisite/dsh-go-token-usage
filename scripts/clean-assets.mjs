@@ -8,7 +8,7 @@ const assets = join(dirname(dirname(fileURLToPath(import.meta.url))), 'assets')
 let removed = 0
 try {
   for (const name of readdirSync(assets)) {
-    if (/^usage-\d{8}-\d{6}\.png$/.test(name)) {
+    if (/^usage-\d{8}-\d{6}(-[a-z0-9]+)?\.png$/.test(name)) {
       rmSync(join(assets, name), { force: true })
       removed += 1
     }

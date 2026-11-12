@@ -1,11 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, cpSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
 import { UsageLedger } from '../lib/ledger.js'
-import { stripData, summaryText, turnNoteData, usageData, usageView, verifyLine } from '../lib/view.js'
+import { totalTokens } from '../lib/tally.js'
+import { historyNote, stripData, summaryText, turnNoteData, usageData, usageView, verifyLine } from '../lib/view.js'
 
 const NOW = new Date(2026, 10, 12, 12, 0, 0).getTime()
 const header = JSON.stringify({ type: 'session', version: 4, id: 'session-aaa', createdAt: NOW, cwd: '/p' })
@@ -256,9 +257,173 @@ test('verifyLine: consistent, pending live calls, and the plain diff', async () 
   await ledger.refresh()
   try {
     assert.equal(verifyLine(ledger, await ledger.recount(), 'zh-CN'), '核对：一致 · 6.09k · 3 次')
+    // A live call the file has not caught up with is accounted for, not a mismatch.
     ledger.noteLive('session-aaa', 99, NOW, { input: 1, cached: 10, cacheWrite: 0, output: 1, reasoning: 0, calls: 1 }, 'm1', 4, 'p')
-    assert.equal(verifyLine(ledger, await ledger.recount(), 'zh-CN'), '核对：差 1 次')
-    assert.ok(verifyLine(ledger, await ledger.recount(), 'en-US').startsWith('Diff'))
+    assert.equal(verifyLine(ledger, await ledger.recount(), 'zh-CN'), '核对：一致 · 6.1k · 4 次')
+    assert.ok(verifyLine(ledger, await ledger.recount(), 'en-US').startsWith('Verified'))
+    // A genuine mismatch inside a readable log is still reported as a diff.
+    const rec = [...ledger.records.values()][0]
+    rec.days[Object.keys(rec.days)[0]].input += 1000
+    rec.totals.input += 1000
+    assert.equal(verifyLine(ledger, await ledger.recount(), 'zh-CN'), '核对：差 1k tokens')
+  } finally {
+    ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+function homeWithTwoChats() {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-mixed-'))
+  const mk = (id, lines) => {
+    const dir = join(home, 'sessions', 'proj', id)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from(lines.join('\n') + '\n', 'utf8')))
+  }
+  const official = (provider, model, u) => JSON.stringify({
+    type: 'assistant/message', seq: 1, time: NOW,
+    data: { turn: 1, step: 1, usage: u, message: { source: { provider, model } } },
+  })
+  mk('session-aaa', [JSON.stringify({ type: 'session', version: 4, id: 'session-aaa', createdAt: NOW, cwd: '/p' }),
+    official('deepseek-account', 'm1', { inputTokens: 100, cacheReadTokens: 900, cacheWriteTokens: 0, outputTokens: 5 })])
+  mk('session-ccc', [JSON.stringify({ type: 'session', version: 4, id: 'session-ccc', createdAt: NOW, cwd: '/p' }),
+    official('custom-relay', 'm2', { inputTokens: 100, outputTokens: 10 })])
+  return home
+}
+
+test('cache hit rate is per chat: a relay chat shows a dash on a mixed host', async () => {
+  const home = homeWithTwoChats()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  try {
+    const official = usageData(ledger, { sessionId: 'session-aaa' }, 'zh-CN')
+    const relay = usageData(ledger, { sessionId: 'session-ccc' }, 'zh-CN')
+    assert.equal(official.session.hit, '90%')
+    assert.equal(relay.session.hit, '—', 'relay chat must not read as a 0% cache hit rate')
+    assert.equal(relay.all.hit, '—', 'a mixed ledger has no single hit rate')
+    assert.equal(relay.today.hit, '—')
+    const relayNotes = turnNoteData(ledger, { sessionId: 'session-ccc' }, 'zh-CN')
+    assert.equal(relayNotes['1'].text, '110', 'no fabricated hit rate on its turn note')
+    const officialNotes = turnNoteData(ledger, { sessionId: 'session-aaa' }, 'zh-CN')
+    assert.match(officialNotes['1'].text, /命中90%/)
+    assert.ok(summaryText(ledger, { sessionId: 'session-ccc' }, 'zh-CN').includes('命中率 —'))
+  } finally {
+    ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('dynamic panel strings follow the locale', async () => {
+  const home = homeWithLog()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  try {
+    const en = usageData(ledger, { sessionId: 'session-aaa' }, 'en-US')
+    assert.match(en.updated, /^Updated /)
+    assert.equal(en.lastVerify, 'Not verified')
+    const zh = usageData(ledger, { sessionId: 'session-aaa' }, 'zh-CN')
+    assert.match(zh.updated, /^已更新 /)
+    assert.equal(zh.lastVerify, '未核对')
+  } finally {
+    ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('turn notes stay inside 16 characters even with huge numbers', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-huge-'))
+  try {
+    const dir = join(home, 'sessions', 'proj', 'session-huge')
+    mkdirSync(dir, { recursive: true })
+    const big = { inputTokens: 1, cacheReadTokens: 1_250_000_000_000, cacheWriteTokens: 0, outputTokens: 1 }
+    const event = JSON.stringify({
+      type: 'assistant/message', seq: 1, time: NOW,
+      data: { turn: 1, step: 1, usage: big, message: { source: { provider: 'p', model: 'm1' } } },
+    })
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from([JSON.stringify({ type: 'session', version: 4, id: 'session-huge', createdAt: NOW, cwd: '/p' }), event].join('\n') + '\n')))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    for (const locale of ['zh-CN', 'en-US']) {
+      const notes = turnNoteData(ledger, { sessionId: 'session-huge' }, locale)
+      for (const note of Object.values(notes)) assert.ok([...note.text].length <= 16, `${locale}: ${note.text}`)
+    }
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('verify names lost history instead of a fake token diff', async () => {
+  const { home, file } = (() => {
+    const h = mkdtempSync(join(tmpdir(), 'dsh-lost-verify-'))
+    const dir = join(h, 'sessions', 'proj', 'session-aaa')
+    mkdirSync(dir, { recursive: true })
+    return { home: h, file: join(dir, 'session.v4.jsonl.zstd') }
+  })()
+  const moved = mkdtempSync(join(tmpdir(), 'dsh-lost-moved-'))
+  try {
+    writeFileSync(file, zlib.zstdCompressSync(Buffer.from([header, call(1, 1, 10, 100, 5), call(2, 2, 20, 200, 6)].join('\n') + '\n')))
+    const first = new UsageLedger({ home, now: () => NOW })
+    await first.refresh()
+    first.dispose()
+    // The moved home keeps the cache but only a shorter copy of the log exists.
+    cpSync(join(home, 'sessions'), join(moved, 'sessions'), { recursive: true })
+    cpSync(join(home, 'cache'), join(moved, 'cache'), { recursive: true })
+    writeFileSync(join(moved, 'sessions', 'proj', 'session-aaa', 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from([header, call(1, 1, 10, 100, 5)].join('\n') + '\n')))
+    const ledger = new UsageLedger({ home: moved, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 341, 'cached history is kept')
+    const line = verifyLine(ledger, await ledger.recount(), 'zh-CN')
+    assert.ok(line.startsWith('核对：一致'), line)
+    assert.ok(line.includes('1 个日志已丢失'), line)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(moved, { recursive: true, force: true })
+  }
+})
+
+test('verify skips when the sessions root is gone', async () => {
+  const home = homeWithLog()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  try {
+    rmSync(join(home, 'sessions'), { recursive: true, force: true })
+    await ledger.refresh()
+    const line = verifyLine(ledger, await ledger.recount(), 'zh-CN')
+    assert.equal(line, '核对：跳过（找不到会话日志目录）')
+    assert.equal(verifyLine(ledger, await ledger.recount(), 'en-US'), 'Verify skipped: no session log folder')
+  } finally {
+    ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('historyNote mentions logs it could not read', async () => {
+  const home = homeWithLog()
+  const brokenDir = join(home, 'sessions', 'proj', 'session-broken')
+  try {
+    mkdirSync(brokenDir, { recursive: true })
+    writeFileSync(join(brokenDir, 'session.v4.jsonl.zstd'), Buffer.from('not a zstd frame at all'))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(ledger.sourceState().scanErrors, 1)
+    assert.equal(historyNote(ledger, 'zh-CN'), '1 个日志读不了，统计可能偏少')
+    assert.match(historyNote(ledger, 'en-US'), /unreadable/)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a chat with no ledger record shows dashes instead of zeros', async () => {
+  const home = homeWithLog()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  try {
+    const data = usageData(ledger, { sessionId: 'session-unknown' }, 'zh-CN')
+    assert.equal(data.session.total, '—')
+    assert.equal(data.session.calls, '—')
+    assert.equal(data.session.output, '—')
   } finally {
     ledger.dispose()
     rmSync(home, { recursive: true, force: true })

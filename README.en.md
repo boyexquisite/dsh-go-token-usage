@@ -36,22 +36,23 @@ or straight into a profile:
 dsh plugin --profile web add dsh-go-token-usage
 ```
 
-Then switch hosts (or reopen the app) once so it re-reads the plugin inventory.
+On a remote host (server / PC) prefer the installer above, or install the dsh-go bridge first — without it the native surfaces are not rendered. Re-running the installer upgrades an older install; `--force` reinstalls. Then switch hosts (or reopen the app) once so it re-reads the plugin inventory.
 
 ## Notes
 
 - **Needs the dsh-go bridge**: native surfaces only render on hosts that serve it — the phone's own engine ships it; for a remote host run `npx dsh-go-token-usage install` (the installer downloads the bridge from upstream GitHub). **DSH Remote** connections do not show them.
 - **Re-read after install**: switch hosts in the app (or reopen it). Manifest changes are picked up automatically; changes under `lib/` need an engine restart.
-- **Generate image**: needs `python3` + Pillow on the host (it tells you when missing). The picture shows at the bottom of the panel; the PNG stays in the package's `assets/` (latest three kept). There is no long-press save in the app, so screenshot it.
+- **Generate image**: needs `python3` + Pillow and a CJK font on the host (Noto CJK / WenQuanYi / Microsoft YaHei / PingFang; otherwise Chinese labels are tofu). It tells you when Python/Pillow is missing. Drawing is deferred, so a slow render does not lose the tap. The card shows only in the chat that generated it; PNGs stay in the package's `assets/` (latest three kept, and images other chats are still showing are protected). There is no long-press save in the app, so screenshot it.
 - **This host only**: counts this `$DSH_HOME`; other hosts count separately. Subagents count in the windows and total, not in "this chat".
-- **First run takes a few seconds**: the initial scan of existing sessions is about 5 s; numbers appear shortly after.
-- **Dashes**: a relay that does not report cache counters shows "—" for the hit rate; unreported reasoning shows "—".
+- **First run takes a few seconds**: the initial scan of existing sessions takes about 5–10 s depending on log size; numbers appear shortly after.
+- **Dashes**: a relay that does not report cache counters shows "—" for that chat's / period's hit rate (a mixed host never reads a relay as 0%); unreported reasoning shows "—".
 - **Logs can vanish without zeroing history**: everything the plugin has read is kept in its own cache, so cleaning up logs or deleting a chat keeps the numbers and the panel says "N log(s) gone — history kept from cache". Logs that vanished before the plugin ever read them (for example, cleaned up before installing) cannot be recovered; the panel then says "No session logs here — live calls only" instead of silently showing 0. Switching `$DSH_HOME` means a different ledger; days follow the host's local time zone.
 
 ## Compatibility
 
-- DSH `0.2.1-rc.2` – `0.2.x`;
-- the host needs the dsh-go bridge: the phone's own engine ships it, the installer adds it to a remote host;
+- Plugin host half: DSH `0.2.1-rc.2` – `0.2.x` (`assistant/attempt`, `message.source`, `session/end-seed` exist since 0.2.1-rc.2); tested on DSH 0.2.2-rc.1;
+- the native surfaces additionally need the dsh-go bridge (adapted and verified against `@deepseek-ai/dsh-web-app@0.2.2-rc.1`): the phone's own engine ships it, the installer adds it to a remote host;
+- Node 22.19+ (uses the `zlib` zstd decoder; DSH 0.2.2 itself requires Node 24.9+);
 - native surfaces do not show over DSH Remote connections (app limitation).
 
 ## Privacy
@@ -68,10 +69,10 @@ No account, key or credential is read, and nothing is sent over the network at r
 - Sessions are deduplicated by id: moving/copying `$DSH_HOME`, or one session appearing in two project directories, counts once;
 - Logs are parsed as a stream, so memory stays bounded instead of growing with the file;
 - A relay that omits cache counters shows a dash instead of a fake 0%; unreported reasoning shows a dash too;
-- The first run scans existing sessions (~5 s), then only changed files are read; the cache in `$DSH_HOME/cache/dsh-go-token-usage/index.json` holds numbers, model names, local session-file paths and live calls not yet flushed to disk;
-- Each session is read from its current format generation only (highest version in the file name), so older generations left by a format migration are not counted twice; uncompressed logs (`compression: none`) are read too;
+- The first run scans existing sessions (~5–10 s, depending on log size), then only changed files are read; the cache in `$DSH_HOME/cache/dsh-go-token-usage/index.json` holds numbers, model names, local session-file paths and live calls not yet flushed to disk;
+- Each session is read from its current format generation only (highest version in the file name), so older generations left by a format migration are not counted twice; if the newest generation is empty or unreadable the previous one is used instead, so history never drops to zero (the panel then says "N log(s) unreadable"); uncompressed logs (`compression: none`) are read too;
 - History read before a log disappeared stays counted and is flagged as missing from disk (the panel and Verify both say so);
-- Verify re-counts every log: `Verified · …` when it matches, `Diff N calls` for calls not yet flushed to disk; cached history whose log is gone is left out of the comparison and named (`N log(s) gone`).
+- Verify re-counts every log and compares per session: `Verified · …` when it matches; cached history whose log is gone is named separately (`N log(s) gone`) instead of a fake diff; with no session log folder at all it reports `Verify skipped`; only a real unexplained amount shows `Diff … tokens`.
 
 </details>
 
