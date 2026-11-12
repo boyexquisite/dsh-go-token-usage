@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import zlib from 'node:zlib'
 import { UsageLedger } from '../lib/ledger.js'
 import { totalTokens } from '../lib/tally.js'
-import { usageData } from '../lib/view.js'
+import { historyNote, usageData, verifyLine } from '../lib/view.js'
 
 const NOW = new Date(2026, 10, 12, 12, 0, 0).getTime()
 const header = (id = 'session-aaa') => JSON.stringify({ type: 'session', version: 4, id, createdAt: NOW, cwd: '/p' })
@@ -181,6 +181,82 @@ test('unknown cache coverage only affects the windows it covers', async () => {
     const data = usageData(ledger, { sessionId: 'session-aaa' }, 'zh-CN')
     assert.equal(data.today.hit, '91%')
     assert.equal(data.all.hit, '—')
+    ledger.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('a seeded log with a lost header still skips its inherited prefix', async () => {
+  const h = home()
+  try {
+    const lines = [
+      call(0, 1, 1, 100, 1000, 10),
+      call(1, 2, 1, 100, 1000, 10),
+      JSON.stringify({ type: 'session/end-seed', seq: 2, time: NOW, data: { inherited: true } }),
+      call(3, 3, 1, 7, 70, 3),
+    ]
+    writeFileSync(h.zstd, frame(lines))
+    const ledger = new UsageLedger({ home: h.root, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(tokens(ledger), 80, 'the inherited prefix is not billed twice even without a header')
+    assert.equal(ledger.allTime().calls, 1)
+    ledger.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('a damaged cache falls back to the backup instead of losing history', async () => {
+  const h = home()
+  try {
+    writeFileSync(h.zstd, frame([header(), call(1, 1, 1)]))
+    const first = new UsageLedger({ home: h.root, now: () => NOW })
+    await first.refresh()
+    first.dispose()
+    const second = new UsageLedger({ home: h.root, now: () => NOW })
+    await second.refresh()
+    second.dispose() // a second save turns the first cache into index.json.bak
+    const cacheDir = join(h.root, 'cache', 'dsh-go-token-usage')
+    writeFileSync(join(cacheDir, 'index.json'), '{not json')
+    const third = new UsageLedger({ home: h.root, now: () => NOW })
+    assert.equal(tokens(third), 115, 'history survived through the backup')
+    assert.equal(third.sourceState().cacheDamaged, true)
+    await third.refresh()
+    assert.equal(tokens(third), 115)
+    third.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('an empty log is called out instead of being reported as "no logs"', async () => {
+  const h = home()
+  try {
+    writeFileSync(h.zstd, frame([header(), call(1, 1, 1)]))
+    const emptyDir = join(h.root, 'sessions', 'proj', 'session-empty')
+    mkdirSync(emptyDir, { recursive: true })
+    writeFileSync(join(emptyDir, 'session.v4.jsonl.zstd'), Buffer.alloc(0))
+    const ledger = new UsageLedger({ home: h.root, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(ledger.sourceState().emptyLogs, 1)
+    assert.equal(historyNote(ledger, 'zh-CN'), '1 个日志为空，统计可能偏少')
+    ledger.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('a call-count-only mismatch still shows up in Verify', async () => {
+  const h = home()
+  try {
+    writeFileSync(h.zstd, frame([header(), call(1, 1, 1)]))
+    const ledger = new UsageLedger({ home: h.root, now: () => NOW })
+    await ledger.refresh()
+    const rec = [...ledger.records.values()][0]
+    rec.totals.calls += 1 // calls differ, tokens do not
+    const line = verifyLine(ledger, await ledger.recount(), 'zh-CN')
+    assert.equal(line, '核对：差 1 次')
     ledger.dispose()
   } finally {
     rmSync(h.root, { recursive: true, force: true })
