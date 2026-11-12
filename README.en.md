@@ -67,6 +67,7 @@ No account, key or credential is read, and nothing is sent over the network at r
 - "This chat" counts the session itself; subagent calls count in the windows and the total;
 - Fork/seed logs skip the inherited prefix (the `session/end-seed` marker), so nothing is counted twice; if the parent's own log is gone from this host, that prefix is not restored;
 - Sessions are deduplicated by id: moving/copying `$DSH_HOME`, or one session appearing in two project directories, counts once;
+- The scan never trusts `readdir`'s `d_type` (Android proot/FUSE can report a regular file as a symlink): types come from `stat` and links are followed, so proot environments count normally;
 - Logs are parsed zstd-frame by zstd-frame as a stream: decompressed memory stays bounded (the compressed file itself is read whole) and huge single frames are decoded incrementally;
 - A relay that omits cache counters shows a dash instead of a fake 0%; unreported reasoning shows a dash too;
 - The first run scans existing sessions (~5–10 s, depending on log size), then only changed files are read; the cache in `$DSH_HOME/cache/dsh-go-token-usage/index.json` holds numbers, model names, local session-file paths and live calls not yet flushed to disk;
