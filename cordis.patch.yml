@@ -1,0 +1,6 @@
+# Applied when a profile selects this bundle:
+#   dsh plugin --profile web add dsh-go-token-usage
+# A plain insert (id + name) mounts without a restart.
+- insert:
+    - id: dsh-go-token-usage
+      name: dsh-go-token-usage

@@ -1,0 +1,81 @@
+{
+  "name": "dsh-go-token-usage",
+  "version": "0.1.0",
+  "description": "Token usage for the dsh-go app: this chat, today, last 7 days, last 30 days, cache hits — as a status strip, a native panel and per-turn notes. Read-only, counted from the host's own session logs.",
+  "license": "MIT",
+  "author": "miao",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-go-token-usage": "bin/install.mjs"
+  },
+  "files": [
+    "lib",
+    "bin",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-go",
+    "deepseek-harness",
+    "harness",
+    "plugin",
+    "token",
+    "usage",
+    "cache",
+    "dshGo"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/REPLACE_OWNER/dsh-go-token-usage.git"
+  },
+  "homepage": "https://github.com/REPLACE_OWNER/dsh-go-token-usage#readme",
+  "bugs": {
+    "url": "https://github.com/REPLACE_OWNER/dsh-go-token-usage/issues"
+  },
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --test test/*.test.js && node -e \"import('./lib/index.js').then(()=>console.log('host half loads'))\""
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dshGo": {
+    "v": 1,
+    "title": { "zh": "Token 用量", "en": "Token usage" },
+    "icon": "chart",
+    "contributes": {
+      "composer.strip": [
+        { "id": "usage-strip", "icon": "chart", "panel": "usage" }
+      ],
+      "turn.note": [
+        { "id": "usage-turn" }
+      ],
+      "panels": [
+        {
+          "id": "usage",
+          "title": { "zh": "Token 用量", "en": "Token usage" },
+          "icon": "chart",
+          "placement": ["session.tab", "features", "chat.panel"]
+        }
+      ]
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
