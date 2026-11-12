@@ -30,6 +30,16 @@ dsh plugin --profile web add dsh-go-token-usage@0.1.0
 
 Then switch hosts (or reopen the app) once so it re-reads the plugin inventory.
 
+## Notes
+
+- **Needs the dsh-go bridge**: native surfaces only render on hosts that serve it — the phone's own engine ships it; for a remote host run `npx dsh-go-token-usage install` (the installer downloads the bridge from upstream GitHub). **DSH Remote** connections do not show them.
+- **Re-read after install**: switch hosts in the app (or reopen it). Manifest changes are picked up automatically; changes under `lib/` need an engine restart.
+- **Export image**: needs `python3` + Pillow on the host (it tells you when missing). The PNG stays in the package's `assets/` (latest three kept); there is no long-press save in the app, so screenshot it.
+- **This host only**: counts this `$DSH_HOME`; other hosts count separately. Subagents count in the windows and total, not in "this chat".
+- **First run takes a few seconds**: the initial scan of existing sessions is about 5 s; numbers appear shortly after.
+- **Dashes**: a relay that does not report cache counters shows "—" for the hit rate; unreported reasoning shows "—".
+- **History depends on logs**: deleting session logs or switching `$DSH_HOME` loses the history; days follow the host's local time zone.
+
 ## Compatibility
 
 - DSH `0.2.1-rc.2` – `0.2.x`;
