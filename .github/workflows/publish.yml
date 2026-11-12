@@ -60,7 +60,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          PREVIOUS=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           {
             echo "## dsh-go-token-usage ${GITHUB_REF_NAME}"
             echo
@@ -71,13 +70,6 @@ jobs:
               capture && /^## / { exit }
               capture { print }
             ' CHANGELOG.md
-            echo
-            echo "### Commits"
-            if [ -n "$PREVIOUS" ]; then
-              git log --pretty='- %s (%h)' "${PREVIOUS}..${GITHUB_REF_NAME}"
-            else
-              git log --pretty='- %s (%h)' "${GITHUB_REF_NAME}"
-            fi
             echo
             echo "### Install / 安装"
             echo '```sh'
