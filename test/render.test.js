@@ -47,7 +47,7 @@ test('usageImageView: one image bound to data, regenerate and back actions', () 
   assert.deepEqual(image.src, { $: 'data.src' })
   assert.deepEqual(image.aspect, { $: 'data.aspect' })
   const actions = collect(view, 'actions')[0].items.map((item) => item.action)
-  assert.deepEqual(actions, ['export', 'usage'])
+  assert.deepEqual(actions, ['export', 'copy', 'usage'])
   assert.ok(JSON.stringify(view).length < 4096)
 })
 

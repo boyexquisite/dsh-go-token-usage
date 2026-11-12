@@ -13,14 +13,16 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-WIDTH = 1080
-MARGIN = 72
-ROW_HEIGHT = 168
-ROW_GAP = 20
-RADIUS = 28
-BG = "#F5F7FB"
+WIDTH = 810
+MARGIN = 40
+ROW_HEIGHT = 112
+ROW_GAP = 12
+RADIUS = 22
+BG = "#FFFFFF"
 INK = "#1B2130"
 MUTED = "#6B7385"
+MODELS_BG = "#F4F6FB"
+DIVIDER = "#E4E9F2"
 
 FONT_REGULAR = [
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
@@ -62,10 +64,10 @@ def font(size, bold=False):
 
 
 def tint(hex_color, amount=0.10):
-    """Blend a colour into the card background, like the app's tinted cards."""
+    """Blend a colour into white, like the app's tinted cards."""
     value = hex_color.lstrip("#")
     rgb = tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))
-    bg = tuple(int(BG[i : i + 2], 16) for i in (1, 3, 5))
+    bg = (255, 255, 255)
     return tuple(round(bg[i] * (1 - amount) + rgb[i] * amount) for i in range(3))
 
 
@@ -81,73 +83,83 @@ def fit(draw, text, fnt, max_width):
 def render(data, output):
     rows = data.get("rows", [])
     models = data.get("models", [])
-    models_title = data.get("modelsTitle", "")
 
     models_height = 0
     if models:
-        models_height = 92 + 68 * len(models) + 24
+        models_height = 86 + 46 * len(models) + 20
 
-    height = MARGIN + 96 + 40 + len(rows) * (ROW_HEIGHT + ROW_GAP) + models_height + 96 + MARGIN
+    height = 150 + len(rows) * (ROW_HEIGHT + ROW_GAP) + 16 + models_height + 64
     image = Image.new("RGB", (WIDTH, height), BG)
     draw = ImageDraw.Draw(image)
 
-    title_font = font(58, bold=True)
-    subtitle_font = font(26)
-    label_font = font(30, bold=True)
-    value_font = font(62, bold=True)
-    unit_font = font(24)
-    meta_font = font(26)
-    small_font = font(22)
-    model_font = font(28)
-    model_meta_font = font(23)
+    title_font = font(40, bold=True)
+    subtitle_font = font(19)
+    label_font = font(22, bold=True)
+    value_font = font(42, bold=True)
+    unit_font = font(18)
+    meta_font = font(19)
+    extra_font = font(17)
+    section_font = font(23, bold=True)
+    head_font = font(17)
+    model_font = font(23)
+    model_meta_font = font(19)
+    footer_font = font(16)
 
     x = MARGIN
     right = WIDTH - MARGIN
 
-    draw.text((x, MARGIN), data.get("title", ""), font=title_font, fill=INK)
-    subtitle = data.get("subtitle", "")
-    draw.text((x, MARGIN + 78), subtitle, font=subtitle_font, fill=MUTED)
+    draw.text((x, 42), data.get("title", ""), font=title_font, fill=INK)
+    draw.text((x, 94), data.get("subtitle", ""), font=subtitle_font, fill=MUTED)
 
-    y = MARGIN + 96 + 40
+    y = 150
     for row in rows:
         color = row.get("color", "#3D6FD6")
         draw.rounded_rectangle((x, y, right, y + ROW_HEIGHT), radius=RADIUS, fill=tint(color))
-        draw.text((x + 32, y + 26), row.get("label", ""), font=label_font, fill=color)
+        pad = 24
+        draw.text((x + pad, y + 16), row.get("label", ""), font=label_font, fill=color)
         value = row.get("value", "—")
-        draw.text((x + 32, y + 74), value, font=value_font, fill=color)
-        value_width = draw.textlength(value, font=value_font)
+        draw.text((x + pad, y + 42), value, font=value_font, fill=color)
         unit = row.get("unit", "")
         if unit:
-            draw.text((x + 40 + value_width, y + 104), unit, font=unit_font, fill=MUTED)
+            draw.text((x + pad + draw.textlength(value, font=value_font) + 8, y + 62), unit, font=unit_font, fill=MUTED)
         meta = row.get("meta", "")
         if meta:
-            meta_width = draw.textlength(meta, font=meta_font)
-            draw.text((right - 32 - meta_width, y + 36), meta, font=meta_font, fill=MUTED)
+            draw.text((right - pad - draw.textlength(meta, font=meta_font), y + 20), meta, font=meta_font, fill=MUTED)
         extra = row.get("extra", "")
         if extra:
-            extra_width = draw.textlength(extra, font=small_font)
-            draw.text((right - 32 - extra_width, y + 96), extra, font=small_font, fill=MUTED)
+            draw.text((right - pad - draw.textlength(extra, font=extra_font), y + 62), extra, font=extra_font, fill=MUTED)
         y += ROW_HEIGHT + ROW_GAP
 
     if models:
-        draw.text((x, y + 18), models_title, font=label_font, fill=INK)
-        y += 72
-        for model in models:
-            name = fit(draw, model.get("name", ""), model_font, 520)
-            draw.text((x, y + 6), name, font=model_font, fill=INK)
+        y += 4
+        card_top = y
+        card_bottom = y + models_height
+        draw.rounded_rectangle((x, card_top, right, card_bottom), radius=RADIUS, fill=MODELS_BG)
+        pad = 24
+        draw.text((x + pad, y + 18), data.get("modelsTitle", ""), font=section_font, fill=INK)
+        header_y = y + 54
+        col_source = x + pad + 300
+        draw.text((x + pad, header_y), data.get("modelCol", ""), font=head_font, fill=MUTED)
+        draw.text((col_source, header_y), data.get("sourceCol", ""), font=head_font, fill=MUTED)
+        tokens_head = data.get("tokensCol", "")
+        draw.text((right - pad - draw.textlength(tokens_head, font=head_font), header_y), tokens_head, font=head_font, fill=MUTED)
+        row_y = header_y + 24
+        for index, model in enumerate(models):
+            if index > 0:
+                draw.line((x + pad, row_y - 2, right - pad, row_y - 2), fill=DIVIDER, width=1)
+            name = fit(draw, model.get("name", ""), model_font, col_source - (x + pad) - 16)
+            draw.text((x + pad, row_y + 10), name, font=model_font, fill=INK)
             source = model.get("source", "")
             if source:
-                draw.text((x, y + 42), source, font=model_meta_font, fill=MUTED)
+                draw.text((col_source, row_y + 13), source, font=model_meta_font, fill=MUTED)
             value = model.get("value", "")
-            value_width = draw.textlength(value, font=model_font)
-            draw.text((right - value_width, y + 6), value, font=model_font, fill=INK)
-            y += 68
+            draw.text((right - pad - draw.textlength(value, font=model_font), row_y + 10), value, font=model_font, fill=INK)
+            row_y += 46
 
     footer = data.get("footer", "")
     if footer:
-        footer_font = font(21)
         footer_width = draw.textlength(footer, font=footer_font)
-        draw.text(((WIDTH - footer_width) / 2, height - MARGIN + 18), footer, font=footer_font, fill=MUTED)
+        draw.text(((WIDTH - footer_width) / 2, height - 34), footer, font=footer_font, fill=MUTED)
 
     image.save(output, "PNG", optimize=True)
     return {"width": image.width, "height": image.height}
