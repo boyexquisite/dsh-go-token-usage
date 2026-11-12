@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import zlib from 'node:zlib'
 import { UsageLedger } from '../lib/ledger.js'
 import { totalTokens } from '../lib/tally.js'
-import { historyNote, stripData, summaryText, turnNoteData, usageData, usageView, verifyLine } from '../lib/view.js'
+import { displayCompact, historyNote, stripData, summaryText, turnNoteData, usageData, usageView, verifyLine } from '../lib/view.js'
 
 const NOW = new Date(2026, 10, 12, 12, 0, 0).getTime()
 const header = JSON.stringify({ type: 'session', version: 4, id: 'session-aaa', createdAt: NOW, cwd: '/p' })
@@ -452,6 +452,140 @@ test('a chat with no ledger record shows dashes instead of zeros', async () => {
     assert.equal(data.session.output, '—')
   } finally {
     ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+
+// ── V-01 / V-13: model and provider labels are sanitized and clipped ─────────
+test('abnormal model/provider names stay single-line, clipped and inside the data budget', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-labels-'))
+  try {
+    const dir = join(home, 'sessions', 'proj', 'session-labels')
+    mkdirSync(dir, { recursive: true })
+    const lines = [JSON.stringify({ type: 'session', version: 4, id: 'session-labels', createdAt: NOW, cwd: '/p' })]
+    const names = [
+      ['deepseek-account', 'deepseek-flash'],
+      ['custom-relay', 'evil\nmodel'],
+      ['custom-tab', 'tab\tname'],
+      ['custom-control', 'nul\u0000name\u0007'],
+      ['custom-' + 'p'.repeat(500), 'x'.repeat(5000)],
+      ['custom-' + 'q'.repeat(500), 'y'.repeat(5000)],
+      ['custom-' + 'r'.repeat(500), 'z'.repeat(5000)],
+    ]
+    names.forEach(([provider, model], index) => {
+      lines.push(JSON.stringify({
+        type: 'assistant/message', seq: index, time: NOW,
+        data: { turn: 1, step: index + 1, usage: { inputTokens: 100, cacheReadTokens: 900, outputTokens: 5 }, message: { source: { provider, model } } },
+      }))
+    })
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from(lines.join('\n') + '\n')))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    const data = usageData(ledger, { sessionId: 'session-labels' }, 'zh-CN')
+    assert.equal(data.modelRows.length, 6)
+    for (const [name, source] of data.modelRows) {
+      assert.ok(!/[\u0000-\u001f\u007f-\u009f]/.test(name), `control chars in model: ${JSON.stringify(name)}`)
+      assert.ok(!/[\u0000-\u001f\u007f-\u009f]/.test(source), `control chars in source: ${JSON.stringify(source)}`)
+      assert.ok([...name].length <= 48, `model too long: ${[...name].length}`)
+      assert.ok([...source].length <= 32, `source too long: ${[...source].length}`)
+    }
+    const payload = JSON.stringify({ ...data, imageSrc: 'asset:placeholder.png', imageAspect: 3.375, imageCaption: '' })
+    assert.ok(Buffer.byteLength(payload, 'utf8') <= 32 * 1024, `panel data is ${Buffer.byteLength(payload, 'utf8')} bytes`)
+    const text = summaryText(ledger, { sessionId: 'session-labels' }, 'zh-CN')
+    assert.ok([...text].length <= 8000, `copy is ${[...text].length} chars`)
+    for (const line of text.split('\n')) assert.ok(!/[\u0000-\u001f\u007f-\u009f]/.test(line), JSON.stringify(line))
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+// ── V-06: absurd totals stay ≤5 chars and never break the protocol limits ───
+test('displayCompact clamps huge totals and the strip/notes stay inside 24/16 chars', async () => {
+  assert.equal(displayCompact(999), '999')
+  assert.equal(displayCompact(1234), '1.23k')
+  assert.equal(displayCompact(1e12), '1T')
+  assert.equal(displayCompact(1e15), '1P')
+  assert.equal(displayCompact(1e16), '10P')
+  assert.equal(displayCompact(1e18), '1E')
+  assert.equal(displayCompact(1e21), '999E')
+  assert.equal(displayCompact(-1), '—')
+  assert.equal(displayCompact(NaN), '—')
+  for (const value of [1e15, 1e16, 1e18, 1e21]) assert.ok([...displayCompact(value)].length <= 5, displayCompact(value))
+
+  const home = mkdtempSync(join(tmpdir(), 'dsh-huge-'))
+  try {
+    const dir = join(home, 'sessions', 'proj', 'session-huge')
+    mkdirSync(dir, { recursive: true })
+    const events = [
+      JSON.stringify({ type: 'session', version: 4, id: 'session-huge', createdAt: NOW, cwd: '/p' }),
+      JSON.stringify({
+        type: 'assistant/message', seq: 1, time: NOW,
+        data: { turn: 1, step: 1, usage: { inputTokens: 1e15, cacheReadTokens: 9e15, outputTokens: 1 }, message: { source: { provider: 'p', model: 'm1' } } },
+      }),
+    ]
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from(events.join('\n') + '\n')))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    for (const locale of ['zh-CN', 'en-US']) {
+      const data = usageData(ledger, { sessionId: 'session-huge' }, locale)
+      assert.equal(data.all.total, '10P')
+      assert.ok([...data.all.total].length <= 5)
+      const strip = stripData(ledger, { sessionId: 'session-huge' }, locale)
+      assert.ok([...strip.text].length <= 24, `${locale} strip: ${strip.text}`)
+      assert.ok(!/000T|0000T|00000T/.test(strip.text), `cut number: ${strip.text}`)
+      const notes = turnNoteData(ledger, { sessionId: 'session-huge' }, locale)
+      for (const note of Object.values(notes)) {
+        assert.ok([...note.text].length <= 16, `${locale} note: ${note.text}`)
+        assert.ok(!/000T|0000T/.test(note.text), `cut number: ${note.text}`)
+      }
+      const text = summaryText(ledger, { sessionId: 'session-huge' }, locale)
+      assert.ok(!text.includes('10000T'), text)
+    }
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+// ── V-11: the copied summary lists the same six models as the panel/image ───
+test('summaryText lists the same six models as the panel and the image', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-six-'))
+  try {
+    const dir = join(home, 'sessions', 'proj', 'session-six')
+    mkdirSync(dir, { recursive: true })
+    const lines = [JSON.stringify({ type: 'session', version: 4, id: 'session-six', createdAt: NOW, cwd: '/p' })]
+    for (let index = 0; index < 8; index += 1) {
+      lines.push(JSON.stringify({
+        type: 'assistant/message', seq: index, time: NOW,
+        data: { turn: 1, step: index + 1, usage: { inputTokens: 10, cacheReadTokens: 900, outputTokens: 1 }, message: { source: { provider: 'deepseek-account', model: `m${index}` } } },
+      }))
+    }
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from(lines.join('\n') + '\n')))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    const modelLines = summaryText(ledger, { sessionId: 'session-six' }, 'zh-CN').split('\n').filter((line) => line.startsWith('- '))
+    assert.equal(modelLines.length, 6)
+    assert.equal(usageData(ledger, { sessionId: 'session-six' }, 'zh-CN').modelRows.length, 6)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+// ── V-12: a fresh host never claims "已更新 —" ───────────────────────────────
+test('a never-scanned host does not show an updated-at dash', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-fresh-'))
+  try {
+    mkdirSync(join(home, 'sessions'), { recursive: true })
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    // Deliberately no refresh(): this is the very first frame the panel gets.
+    const data = usageData(ledger, {}, 'zh-CN')
+    assert.equal(data.updated, '')
+    assert.ok(!data.updated.includes('—'))
+    ledger.dispose()
+  } finally {
     rmSync(home, { recursive: true, force: true })
   }
 })
