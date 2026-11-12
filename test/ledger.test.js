@@ -143,3 +143,24 @@ test('seeded fork logs do not double-count the inherited prefix', async () => {
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('recount re-reads the logs and agrees with the live ledger', async () => {
+  const { home, file } = makeHome()
+  try {
+    writeFileSync(file, frame([header('session-aaa'), call(1, NOW, 10, 100, 5), call(2, NOW, 20, 200, 6)]))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    const recount = await ledger.recount()
+    assert.equal(totalTokens(recount.totals), totalTokens(ledger.allTime()))
+    assert.equal(recount.totals.calls, ledger.allTime().calls)
+    assert.equal(recount.files, 1)
+    // A call the file has not caught up with is pending, not a mismatch.
+    ledger.noteLive('session-aaa', 3, NOW, { input: 1, cached: 10, cacheWrite: 0, output: 1, reasoning: 0, calls: 1 }, 'm1', 1, 'p')
+    const after = await ledger.recount()
+    assert.equal(totalTokens(after.totals), totalTokens(recount.totals))
+    assert.equal(ledger.pendingCount(), 1)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

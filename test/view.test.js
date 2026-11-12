@@ -111,6 +111,9 @@ test('usageData: windows, averages over days with calls, chart series and models
     assert.equal(data.models[0].subtitle, '第三方 · p')
     assert.equal(data.models[0].trailing, '6.09k')
     assert.ok(data.updated.startsWith('已更新'))
+    assert.equal(data.lastVerify, '未核对')
+    ledger.verifyNote = '核对：一致 · 6.09k · 3 次'
+    assert.equal(usageData(ledger, { sessionId: 'session-aaa' }, 'zh-CN').lastVerify, '核对：一致 · 6.09k · 3 次')
   } finally {
     ledger.dispose()
     rmSync(home, { recursive: true, force: true })
