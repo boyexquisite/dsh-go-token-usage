@@ -20,7 +20,9 @@
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
-    "LICENSE"
+    "LICENSE",
+    "scripts",
+    "assets"
   ],
   "keywords": [
     "dsh",
@@ -56,24 +58,53 @@
   },
   "dshGo": {
     "v": 1,
-    "title": { "zh": "Token 用量", "en": "Token usage" },
+    "title": {
+      "zh": "Token 用量",
+      "en": "Token usage"
+    },
     "icon": "chart",
     "contributes": {
       "composer.strip": [
-        { "id": "usage-strip", "icon": "chart", "panel": "usage" }
+        {
+          "id": "usage-strip",
+          "icon": "chart",
+          "panel": "usage"
+        }
       ],
       "turn.note": [
-        { "id": "usage-turn" }
+        {
+          "id": "usage-turn"
+        }
       ],
       "panels": [
         {
           "id": "usage",
-          "title": { "zh": "Token 用量", "en": "Token usage" },
+          "title": {
+            "zh": "Token 用量",
+            "en": "Token usage"
+          },
           "icon": "chart",
-          "placement": ["session.tab", "features", "chat.panel"]
+          "placement": [
+            "session.tab",
+            "features",
+            "chat.panel"
+          ]
+        },
+        {
+          "id": "usage-image",
+          "title": {
+            "zh": "用量图",
+            "en": "Usage image"
+          },
+          "icon": "image",
+          "placement": [
+            "features",
+            "chat.panel"
+          ]
         }
       ]
-    }
+    },
+    "assets": "assets"
   },
   "publishConfig": {
     "access": "public"

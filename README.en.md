@@ -12,7 +12,7 @@ Everything is counted from the host's own session logs — read-only, no network
 |---|---|
 | Status strip above the composer | `Chat 19.8M · today 155M`; tap to open the panel |
 | Turn note after each reply | Tokens and cache hits of that turn, e.g. `315k · cache 86%` |
-| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Five coloured cards in the order **All time → This chat → Today → Last 7 days → Last 30 days** (blue, green, orange, teal, violet). Every card shares one skeleton: a headline with title + total + tokens, then left/right aligned rows for hit rate, calls, input total, output; the 7- and 30-day cards add daily average and days covered, and the 30-day card ends with uncached input / cache reads / cache writes / reasoning. Today ends with a 「Models today」 list (model + source + tokens); Last 7 days adds a bar chart. The five cards line up vertically with normal spacing; copy summary, verify and refresh at the bottom |
+| Panel (chat details › Plugins, All features, chat-page Plugins sheet) | Five coloured cards in the order **All time → This chat → Today → Last 7 days → Last 30 days** (blue, green, orange, teal, violet). Every card shares one skeleton: a headline with title + total + tokens, then left/right aligned rows for hit rate, calls, input total, output; the 7- and 30-day cards add daily average and days covered, and the 30-day card ends with uncached input / cache reads / cache writes / reasoning. Today ends with a 「Models today」 list (model + source + tokens); Last 7 days adds a bar chart. The five cards line up vertically with normal spacing; copy summary, export image, verify and refresh at the bottom |
 
 Numbers follow the engine's own accounting:
 
@@ -98,6 +98,7 @@ What has been checked:
 - Independent recount: decompress the raw `$DSH_HOME/sessions` logs with `zstd` and sum them in a separate Python script; today's tokens, today's calls, all-time tokens and all-time calls match the panel exactly;
 - Forked / seeded sessions start with a copy of the parent's events. Those were already billed on the parent log, so the plugin skips everything up to the `session/end-seed` marker with `inherited: true`; covered by a unit test;
 - Live accounting is reconciled against the files by event `seq`: a call is counted once, first provisionally, then from the file once it lands;
+- **Export image**: the host draws a portrait stats card (1080 px wide PNG) with Python + Pillow, stores it in the package's `assets/`, and the app opens the 「Usage image」 panel showing it — screenshot to keep or share. Served through the bridge at `/dsh-go/v1/assets/<pkg>/<file>`. Needs `python3` + Pillow on the host; without it the button explains instead of failing elsewhere. The latest three images are kept;
 - The panel has a **Verify** button: it re-parses every raw session log on the host (bypassing the index cache) and compares the result with the panel numbers, then shows a line such as `Verified · 3.46B · 18.1k calls`. Calls that have not reached their file yet show as `Diff N calls` instead of a false mismatch;
 - Tests cover day rollover, live de-duplication, file catch-up, fork prefixes and missing cache counters (`npm test`).
 
@@ -109,6 +110,13 @@ Known boundaries:
 - Days follow the host's local time zone;
 - History depends on this host's session logs: deleted logs or a different `DSH_HOME` mean no history;
 - The verify result lives in memory only and resets to "Not verified" after an engine restart.
+
+## What image export needs
+
+- `python3` on the host with `python3 -c "import PIL"` passing (`pip install pillow`);
+- A CJK font: the script looks for Noto Sans CJK / WenQuanYi / PingFang / Microsoft YaHei and still draws if none is found;
+- The PNG is written inside the package's `assets/` and served through the bridge assets route — no network, no upload;
+- The app's plugin image view can only display the picture (no long-press save), so export means: draw it here, screenshot it.
 
 ## Uninstall
 
