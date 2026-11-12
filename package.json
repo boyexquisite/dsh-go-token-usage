@@ -1,6 +1,6 @@
 {
   "name": "dsh-go-token-usage",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Token usage for the dsh-go app: status strip, native panel, per-turn notes and a PNG card. Counted from local session logs; no network.",
   "license": "MIT",
   "author": "miao",
