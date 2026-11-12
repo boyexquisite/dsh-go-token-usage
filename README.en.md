@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-Native token usage for the [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) phone app: a status strip above the composer, a panel in the chat's Plugins tab, a note under every reply, and a generated usage card. Every number comes from this host's own session logs — no network, no estimates.
+Native token usage for the [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) phone app: a status strip above the composer, a panel in the chat's Plugins tab, a note under every reply, and a generated usage card. Every number comes from this host's own session logs — no network at runtime, no estimates.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/boyexquisite/dsh-go-token-usage/main/docs/panel.jpg" width="300" alt="The panel in the app's Plugins tab">
@@ -21,7 +21,7 @@ The generated usage card (sample data):
 | Status strip | `Chat 8.8M · today 245M`; tap to open the panel |
 | Panel | All time / this chat / today / last 7 days / last 30 days, hit rate, daily average, days covered, today's models labelled official / relay / subscription |
 | Turn note | Tokens and cache hits of each reply |
-| Generate image | Draws a portrait card on the host and shows it at the bottom of the panel (a placeholder until you export) — screenshot to share (needs `python3` + Pillow) |
+| Generate image | Draws a portrait card on the host and shows it at the bottom of the panel (a placeholder until you generate it) — screenshot to share (needs `python3` + Pillow) |
 | Verify | Re-counts the raw logs and compares with the panel |
 
 ## Install
@@ -38,13 +38,15 @@ dsh plugin --profile web add dsh-go-token-usage
 
 On a remote host (server / PC) prefer the installer above, or install the dsh-go bridge first — without it the native surfaces are not rendered. Re-running the installer upgrades an older install; `--force` reinstalls. Then switch hosts (or reopen the app) once so it re-reads the plugin inventory.
 
+The installer also accepts three subcommands — `bridge` (bridge only), `plugin` (plugin only), `status` (show what is installed) — and the flags `--profile <name>`, `--from <npm spec/tarball/dir>`, `--no-bridge`, `--force`, `--dry-run` (print the plan only). **`--force` overwrites installed files (including local hardening applied to the bridge), so avoid it unless you really need it** — before reinstalling the bridge it backs the old one up to `<bridgeDir>.bak-<timestamp>`, lists files that differ from the pin, and restores it if the swap fails. The phone engine's built-in bridge (when `/etc/dsh-app/runtime.json` exists) is never replaced by `--force`.
+
 ## Notes
 
 - **Needs the dsh-go bridge**: native surfaces only render on hosts that serve it — the phone's own engine ships it; for a remote host run `npx dsh-go-token-usage install` (the installer downloads the bridge from upstream GitHub). **DSH Remote** connections do not show them.
 - **Re-read after install**: switch hosts in the app (or reopen it). Manifest changes are picked up automatically; changes under `lib/` need an engine restart.
-- **Generate image**: needs `python3` + Pillow and a CJK font on the host (set `DSH_TOKEN_USAGE_PYTHON` to an absolute path if it lives somewhere unusual; same-named binaries in world-writable PATH directories are ignored) (Noto CJK / WenQuanYi / Microsoft YaHei / PingFang; otherwise Chinese labels are tofu). It tells you when Python/Pillow is missing. Drawing is deferred, so a slow render does not lose the tap. The card shows only in the chat that generated it; PNGs stay in the package's `assets/` (latest three kept, and images other chats are still showing are protected). There is no long-press save in the app, so screenshot it.
+- **Generate image**: needs `python3` + Pillow and a CJK font on the host (set `DSH_TOKEN_USAGE_PYTHON` to an absolute path if it lives somewhere unusual; same-named binaries in world-writable PATH directories are ignored) (Noto CJK / WenQuanYi / Microsoft YaHei / PingFang; with no CJK font at all it automatically draws the English labels instead of tofu). It tells you when Python/Pillow is missing. Drawing is deferred, so a slow render does not lose the tap. The card shows only in the chat that generated it; PNGs stay in the package's `assets/` (latest three kept, and images other chats are still showing are protected). There is no long-press save in the app, so screenshot it.
 - **This host only**: counts this `$DSH_HOME`; other hosts count separately. Subagents count in the windows and total, not in "this chat".
-- **First run takes a few seconds**: the initial scan of existing sessions takes about 5–10 s depending on log size; numbers appear shortly after.
+- **First run takes a few seconds**: the initial scan of existing sessions takes about 5–10 s depending on log size; numbers appear shortly after. The first cold scan reads each zstd log file whole (decompression itself is streamed), so the memory peak is about the size of the largest single log file (the per-file cap defaults to 128MB).
 - **Hit rate**: exact when every call reported cache counters; `≈xx%` when only some did (a single relay call no longer blanks the whole number, and a relay is never read as 0%); "—" only when nothing reported them. Unreported reasoning shows "—".
 - **Logs can vanish without zeroing history**: everything the plugin has read is kept in its own cache, so cleaning up logs or deleting a chat keeps the numbers and the panel says "N log(s) gone — history kept from cache". Logs that vanished before the plugin ever read them (for example, cleaned up before installing) cannot be recovered; the panel then says "No session logs here — live calls only" instead of silently showing 0. Switching `$DSH_HOME` means a different ledger; days follow the host's local time zone.
 
@@ -67,10 +69,12 @@ On a remote host (server / PC) prefer the installer above, or install the dsh-go
 - **No HOME / no passwd entry**: `$DSH_HOME` → `HOME` → `USERPROFILE` → `os.homedir()` → cwd, so the plugin never fails to mount; setting `DSH_HOME` explicitly is still recommended on Android.
 - **ADB / local-directory install**: `--from <dir>` is copied to `$DSH_HOME/dsh-go/plugins/<name>` before installing, so the engine is never pointed at an npx cache, ADB temp directory or private directory through a `link:`.
 - **Android without /tmp**: image temporary files fall back to a `tmp/` under the cache dir; the 20s poll does not rewrite the cache when nothing changed (battery/fuse friendly).
+- **Windows**: the installer does not support Windows (it only executes `.exe`/`.com`, not the `.cmd`/`.bat`/extensionless shims npm creates, and exits with an error). Use WSL to install, or copy the package directory to `$DSH_HOME/dsh-go/plugins/<name>` and run `dsh plugin --profile web add <dir>` manually.
+- **`DSH_HOME` must not point at pseudo filesystems**: `/proc`, `/sys` and `/dev` reject ordinary mkdir and Node's recursive mkdir can spin forever there; the installer detects this and fails fast with a message — use a normal directory.
 
 ## Privacy
 
-No account, key or credential is read, and nothing is sent over the network at runtime. It only reads the `usage` counters and model names from `$DSH_HOME/sessions` (never message bodies); exported images stay on this host.
+No account, key or credential is read, and nothing is sent over the network at runtime (the installer downloads the dsh-go bridge once during installation). It only reads the `usage` counters and model names from `$DSH_HOME/sessions` (never message bodies); exported images stay on this host.
 
 <details>
 <summary>Details and known limits</summary>
@@ -102,8 +106,11 @@ dsh plugin --profile web remove dsh-go-token-usage
 ```sh
 npm test
 node "$DSH_HOME/skills/dsh-go-plugin/kit/bin/check.mjs" "$PWD" --load
-node scripts/release.mjs 0.1.1   # bump + tag + push; Actions publishes to npm and creates the release
+node scripts/release.mjs <version> --dry-run   # run every preflight check and print the plan; change nothing
+node scripts/release.mjs <version>             # bump + tag + atomic push; Actions publishes to npm and creates the release
 ```
+
+The release script refuses a dirty worktree (commit everything first) and preflights the repository root, the current branch (`main` by default, `--branch` to declare another), a strictly higher version (no downgrade, no leading zeros), a non-empty `## <version>` CHANGELOG section, local/remote tag collisions and a local branch that is behind or diverged from origin. Failures happen before anything is written and print a rollback hint; the push is atomic, so a failure never leaves a tag without its branch on the remote.
 
 </details>
 

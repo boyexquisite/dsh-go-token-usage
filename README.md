@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-给 [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) 手机 App 的原生 Token 用量插件：输入框上方的状态条、对话「插件」页签里的面板、每条回复的用量脚注，还能生成一张用量卡片。数字全部来自本机会话日志，不联网、不估算。
+给 [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) 手机 App 的原生 Token 用量插件：输入框上方的状态条、对话「插件」页签里的面板、每条回复的用量脚注，还能生成一张用量卡片。数字全部来自本机会话日志，运行时不联网、不估算。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/boyexquisite/dsh-go-token-usage/main/docs/panel.jpg" width="300" alt="在 dsh-go App 侧栏「插件」页签里的实际样子">
@@ -38,13 +38,15 @@ dsh plugin --profile web add dsh-go-token-usage
 
 远程主机（服务器 / PC）请用上面的安装器，或在直接装插件前先装好 dsh-go 桥接，否则没有原生界面。重新运行安装命令即可升级已装的旧版本；`--force` 强制重装。装完在 App 里切一下主机（或重开 App），让它重读插件清单。
 
+安装器还支持三个子命令：`bridge`（只装桥接）、`plugin`（只装插件）、`status`（查看已装内容）；常用参数有 `--profile <名>`、`--from <npm spec/tarball/目录>`、`--no-bridge`、`--force`、`--dry-run`（只打印计划）。**`--force` 会覆盖已装文件（包括本机对桥接做过的本地加固），非必要不要用**；但重装桥接前会先把旧桥接备份到 `<桥接目录>.bak-<时间戳>` 并列出与 pin 不同的文件，换入失败会还原。手机本机引擎（存在 `/etc/dsh-app/runtime.json`）自带的内置桥接不会被 `--force` 替换。
+
 ## 注意事项
 
 - **需要 dsh-go 桥接**：原生界面只在带桥接的主机上显示——手机本机引擎自带；远程主机用 `npx dsh-go-token-usage install` 装（会从上游 GitHub 下载桥接）。经 **DSH Remote** 连接时不显示。
 - **装完要重读**：在 App 里切一下主机（或重开 App）；之后改清单（`package.json`）自动生效，改 `lib/` 里的代码要重启引擎。
-- **生成图片**：主机需要 `python3` + Pillow 和一个中文字体（Noto CJK / 文泉驿 / 微软雅黑 / PingFang 任一，否则中文标签是方块）；没有会提示；python 在非常规位置时可用 `DSH_TOKEN_USAGE_PYTHON=<绝对路径>` 指定（PATH 里 world-writable 目录下的同名程序不会被采用）；出图走延后效果，慢一点也不会丢点按。图片只显示在生成它的对话里，文件留在本机插件包 `assets/`（最近 3 张，且不会删掉其它对话正在显示的图），App 里不能长按保存，截图分享。
+- **生成图片**：主机需要 `python3` + Pillow 和一个中文字体（Noto CJK / 文泉驿 / 微软雅黑 / PingFang 任一；完全找不到中文字体时会自动改用英文标签出图，不会显示方块）；没有 Python/Pillow 会提示；python 在非常规位置时可用 `DSH_TOKEN_USAGE_PYTHON=<绝对路径>` 指定（PATH 里 world-writable 目录下的同名程序不会被采用）；出图走延后效果，慢一点也不会丢点按。图片只显示在生成它的对话里，文件留在本机插件包 `assets/`（最近 3 张，且不会删掉其它对话正在显示的图），App 里不能长按保存，截图分享。
 - **只算本机**：统计范围是本机 `$DSH_HOME` 的会话，换主机各算各的；子智能体计入「窗口 / 累计」，不计入「本对话」。
-- **第一次慢几秒**：首次运行要扫一遍历史会话（约 5~10 秒，取决于日志大小），面板数字会稍后出现。
+- **第一次慢几秒**：首次运行要扫一遍历史会话（约 5~10 秒，取决于日志大小），面板数字会稍后出现。首次冷扫会把每个 zstd 日志文件整体读入内存（解压本身是流式的），内存峰值约等于最大单个日志文件大小（默认单文件上限 128MB）。
 - **命中率口径**：全部调用都上报 cache 计数时显示精确值；只有部分上报（比如个别中转）显示 `≈xx%`（按已上报部分估算，不再整段变「—」）；完全没上报才显示「—」。引擎不报推理 tokens 时推理显示「—」。
 - **日志没了也不会静默清零**：扫过的历史留在本地缓存里，日志被引擎清理或手动删掉后照常计入，面板注明「N 个日志已不存在，历史按缓存保留」；插件从没扫到过的日志（比如装插件前就清掉的）无法恢复，面板会写明「本机没有会话日志，只含实时调用」，而不是悄悄显示 0。换 `$DSH_HOME` 等于换一套账本；日期按主机本地时区分天。
 
@@ -67,10 +69,12 @@ dsh plugin --profile web add dsh-go-token-usage
 - **没有 HOME / 没有 passwd 条目**：`$DSH_HOME` → `HOME` → `USERPROFILE` → `os.homedir()` → 当前目录逐级回退，不会让插件挂不上；安卓建议显式设置 `DSH_HOME`。
 - **ADB / 本地目录安装**：`--from <目录>` 会先复制到 `$DSH_HOME/dsh-go/plugins/<包名>` 再安装，不会给引擎留一个指向 npx 缓存/ADB 临时目录/私有目录的 `link:`。
 - **没有 /tmp 的安卓**：出图的临时文件会退到缓存目录下的 `tmp/`；20 秒轮询在没有新数据时不重写索引（省电、少碰 FUSE）。
+- **Windows**：安装器不支持 Windows（只执行 `.exe`/`.com`，不执行 npm 生成的 `.cmd`/`.bat`/无扩展名 shim，会直接报错退出）。Windows 用户请用 WSL 安装，或手动把包目录放到 `$DSH_HOME/dsh-go/plugins/<包名>` 后执行 `dsh plugin --profile web add <目录>`。
+- **`DSH_HOME` 不能指向伪文件系统**：`/proc`、`/sys`、`/dev` 不接受普通 mkdir，Node 的 recursive mkdir 在这些路径上会卡死；安装器检测到会立刻失败并提示，换一个正常目录即可。
 
 ## 隐私
 
-不读账号、密钥或任何凭据；运行时不联网。只读 `$DSH_HOME/sessions` 里的 usage 计数和模型名，不保存对话正文；导出的图片只存在本机。
+不读账号、密钥或任何凭据；运行时不联网（首次安装时安装器会联网下载 dsh-go 桥接）。只读 `$DSH_HOME/sessions` 里的 usage 计数和模型名，不保存对话正文；导出的图片只存在本机。
 
 <details>
 <summary>细节与已知边界</summary>
@@ -102,8 +106,11 @@ dsh plugin --profile web remove dsh-go-token-usage
 ```sh
 npm test
 node "$DSH_HOME/skills/dsh-go-plugin/kit/bin/check.mjs" "$PWD" --load
-node scripts/release.mjs <version>   # 先提交所有改动（脚本拒绝脏工作区）；改版本 + 打 tag + push；Actions 自动 npm publish 和 Release
+node scripts/release.mjs <version> --dry-run   # 预检并打印计划，不改文件、不动 git
+node scripts/release.mjs <version>             # 改版本 + 打 tag + atomic push；Actions 自动 npm publish 和 Release
 ```
+
+发版脚本会先校验：cwd 是仓库根、当前分支是 `main`（可用 `--branch` 显式指定）、工作区干净、版本严格递增（拒绝降级/前导零）、`CHANGELOG.md` 有对应非空小节、本地与远端都没有同名 tag、本地分支不落后/分叉。任何失败都会在改动前拒绝并打印回滚指引；push 是 atomic 的，失败不会在远端留下"有 tag 没分支"的半截状态。
 
 </details>
 

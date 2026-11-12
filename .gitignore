@@ -5,3 +5,7 @@ npm-debug.log*
 .idea/
 .vscode/
 assets/usage-*.png
+
+# Python bytecode from render.py smoke tests
+__pycache__/
+*.pyc

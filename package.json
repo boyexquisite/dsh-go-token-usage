@@ -21,7 +21,8 @@
     "README.md",
     "README.en.md",
     "LICENSE",
-    "scripts",
+    "scripts/render.py",
+    "scripts/clean-assets.mjs",
     "assets"
   ],
   "keywords": [
