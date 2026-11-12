@@ -38,6 +38,11 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Pack npm tarball
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p dist
+          npm pack --pack-destination dist
       - name: Release notes
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -64,5 +69,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           gh release create "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md --verify-tag || gh release edit "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
+          gh release upload "$GITHUB_REF_NAME" dist/*.tgz --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
