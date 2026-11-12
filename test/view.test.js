@@ -69,8 +69,9 @@ test('usageView: five aligned cards in the requested order', async () => {
       assert.deepEqual(labels.slice(0, 4), ['命中率', '调用（次）', '输入合计', '输出'])
       assert.ok(kv.items.every((item) => item.value.$ !== undefined))
     }
-    const todayList = cards[2].children.find((c) => c.type === 'list')
-    assert.deepEqual(todayList.items, { $: 'data.models' })
+    const todayTable = cards[2].children.find((c) => c.type === 'table')
+    assert.deepEqual(todayTable.rows, { $: 'data.modelRows' })
+    assert.deepEqual(todayTable.columns.map((c) => (typeof c === 'string' ? c : c.label)), ['模型', '来源', 'tokens'])
     const week = cards[3]
     assert.deepEqual(week.children[1].items.map((i) => i.label).slice(4), ['日均', '覆盖天数（天）'])
     assert.equal(collect(week, 'chart').length, 1)
@@ -107,9 +108,7 @@ test('usageData: windows, averages over days with calls, chart series and models
     assert.equal(data.month.days, '1') // every call in this fixture is "today"
     assert.equal(data.month.daily, '6.09k') // average over the days that have calls
     assert.equal(data.week.days, '1')
-    assert.equal(data.models[0].title, 'm1')
-    assert.equal(data.models[0].subtitle, '第三方 · p')
-    assert.equal(data.models[0].trailing, '6.09k')
+    assert.deepEqual(data.modelRows[0], ['m1', '第三方 p', '6.09k'])
     assert.ok(data.updated.startsWith('已更新'))
     assert.equal(data.lastVerify, '未核对')
     ledger.verifyNote = '核对：一致 · 6.09k · 3 次'
