@@ -10,12 +10,13 @@
 // that serve /dsh-go/v1/*. The phone app's own engine ships it; a remote host
 // (server, PC) has to install it once. This script fetches it straight from the
 // upstream dsh-Go repository at a pinned commit — nothing is redistributed here.
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { chmod, chown, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { resolveExecutable, resolveHome } from '../lib/exec.js'
+import { createHash } from 'node:crypto'
+import { isPseudoFsPath, resolveExecutable, resolveHome } from '../lib/exec.js'
 
 const OWN = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -187,12 +188,14 @@ Options:
   --from <spec>     install the plugin from an npm spec / tarball / directory instead
                     of the published package name
   --no-bridge       skip the bridge step
-  --force           reinstall even when already present (also upgrades)
+  --force           reinstall even when already present (also upgrades); a
+                    bridge reinstall backs the old bridge up first
   --dry-run         print the plan without downloading or writing anything
 
 The status strip, panel and turn notes appear only on hosts that serve the
 dsh-go bridge: the phone app's built-in engine has it, a remote host needs it
-once (this script installs it).`)
+once (this script installs it). On a phone app-runtime host the built-in bridge
+is never replaced, not even by --force.`)
   process.exit(0)
 }
 
@@ -212,7 +215,18 @@ if (process.env.DSH_GO_BRIDGE_REF !== undefined && !/^[0-9a-f]{40}$/i.test(proce
   console.error('DSH_GO_BRIDGE_REF 必须是 40 位 commit SHA')
   process.exit(2)
 }
+const rawDshHome = String(process.env.DSH_HOME ?? '').trim()
+if (isPseudoFsPath(rawDshHome)) {
+  // Node 24/22: mkdirSync('/proc/x', {recursive:true}) can spin forever, so refuse
+  // before any mkdir/rm/cp touches the target instead of falling back silently.
+  console.error(`DSH_HOME 不能指向 /proc、/sys 或 /dev（${rawDshHome}）：这些文件系统不接受 mkdir，安装会卡死。请换一个正常目录。`)
+  process.exit(2)
+}
 const dshHome = resolveHome()
+if (isPseudoFsPath(dshHome)) {
+  console.error(`解析出的 DSH_HOME 落在 /proc、/sys 或 /dev 下（${dshHome}），安装器拒绝运行。`)
+  process.exit(2)
+}
 const pluginsDir = join(dshHome, 'dsh-go', 'plugins')
 const bridgeDir = join(pluginsDir, 'dsh-go-bridge')
 const profileDir = join(dshHome, 'profiles', profile)
@@ -237,37 +251,74 @@ function deps() {
   return profilePkg()?.dependencies ?? {}
 }
 
-function bridgeComplete() {
-  return BRIDGE_FILES.every((file) => existsSync(join(bridgeDir, file)))
+/** Files of the installed bridge that are missing or differ from the pinned upstream bytes. */
+function bridgeHealth() {
+  if (!existsSync(bridgeDir)) return { present: false, missing: [], differs: [], extra: [], verified: false }
+  const missing = []
+  const differs = []
+  for (const file of BRIDGE_FILES) {
+    const path = join(bridgeDir, file)
+    if (!existsSync(path)) {
+      missing.push(file)
+      continue
+    }
+    if (BRIDGE_REF !== BRIDGE_PINNED) continue
+    const want = BRIDGE_SHA256[file]
+    if (want === undefined) continue
+    let got
+    try {
+      got = createHash('sha256').update(readFileSync(path)).digest('hex')
+    } catch {
+      differs.push(file)
+      continue
+    }
+    if (got !== want) differs.push(file)
+  }
+  const known = new Set(BRIDGE_FILES)
+  const extra = []
+  try {
+    for (const entry of readdirSync(bridgeDir)) if (!known.has(entry) && !entry.startsWith('.')) extra.push(entry)
+  } catch {
+    // unreadable bridge dir: completeness already says something is wrong
+  }
+  return { present: true, missing, differs, extra, verified: BRIDGE_REF === BRIDGE_PINNED }
 }
 
-function bridgePresent() {
-  if (deps()['dsh-go-bridge'] !== undefined) return true
-  // A half-finished download (often interrupted on a bad network) must not look
-  // installed, otherwise the second run skips the files that are still missing.
-  return bridgeComplete()
+function bridgeComplete() {
+  return BRIDGE_FILES.every((file) => existsSync(join(bridgeDir, file)))
 }
 
 function pluginPresent() {
   return deps()[OWN.name] !== undefined
 }
 
-function has(bin) {
-  try {
-    execFileSync(bin, ['--version'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
+/** Real paths equal (both must exist); used to refuse copying a directory onto itself. */
+async function samePath(a, b) {
+  const [realA, realB] = await Promise.all([realpath(a).catch(() => undefined), realpath(b).catch(() => undefined)])
+  return realA !== undefined && realB !== undefined && realA === realB
+}
+
+function stampNow() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }
 
 function requireEnv() {
   if (dshBin === undefined) {
-    console.error('找不到 dsh 命令（或它只在 world-writable 目录里）：先在目标主机装好 DSH，并让 dsh 出现在安全的 PATH 目录里。')
+    if (process.platform === 'win32') {
+      console.error('Windows 暂不支持这个安装器：dsh / pnpm 在 Windows 上是 .cmd shim，无法安全地不经 shell 执行。请在 WSL 里安装，或按 README 手动安装。')
+    } else {
+      console.error('找不到 dsh 命令（或它只在相对/可被他人写的目录里）：先在目标主机装好 DSH，并让 dsh 出现在安全的 PATH 目录里。')
+    }
     process.exit(1)
   }
   if (pnpmBin === undefined) {
-    console.error('找不到 pnpm（或它只在 world-writable 目录里）：dsh plugin add 需要 pnpm。先装一个再重试。')
+    if (process.platform === 'win32') {
+      console.error('Windows 暂不支持这个安装器：dsh / pnpm 在 Windows 上是 .cmd shim，无法安全地不经 shell 执行。请在 WSL 里安装，或按 README 手动安装。')
+    } else {
+      console.error('找不到 pnpm（或它只在相对/可被他人写的目录里）：dsh plugin add 需要 pnpm。先装一个再重试。')
+    }
     process.exit(1)
   }
 }
@@ -278,34 +329,44 @@ const BINARIES = () => ({ dsh: dshBin ?? 'dsh', pnpm: pnpmBin ?? 'pnpm' })
  * When run as root on a host whose engine uses another uid (phones!), make sure
  * what we wrote is traversable/readable: pnpm copies files with the current
  * umask, and root's umask is often 077.
+ *
+ * Only the paths the installer itself produced are touched, and only bits are
+ * added (o+r for files, o+rx for dirs): symlinks are never followed or chmodded,
+ * nothing outside $DSH_HOME is touched, and existing modes (0600 secrets, 0755
+ * executables) stay as they are. Never writes anything during --dry-run.
  */
-async function fixPermissions(target) {
+async function fixPermissions(target, { recursive = true } = {}) {
   try {
+    if (flag('dry-run')) return
     if (typeof process.getuid !== 'function' || process.getuid() !== 0) return
-    // Never follow a link: `dsh plugin add <local dir>` may have linked a source
-    // checkout or an npx cache, and that tree is not ours to chmod/chown.
+    const homeReal = await realpath(dshHome).catch(() => dshHome)
+    const insideHome = (path) => path === homeReal || path.startsWith(homeReal + '/')
     const linkStat = await lstat(target).catch(() => undefined)
     if (linkStat === undefined) return
+    let top = target
     if (linkStat.isSymbolicLink()) {
-      const real = await realpath(target).catch(() => undefined)
-      const homeReal = await realpath(dshHome).catch(() => dshHome)
-      if (real === undefined || !(real === homeReal || real.startsWith(homeReal + '/'))) return
-      target = real
+      // `dsh plugin add <local dir>` makes a pnpm "link:" to the source. Only fix
+      // a link that points back inside $DSH_HOME; a checkout or npx cache is not ours.
+      top = await realpath(target).catch(() => undefined)
+    } else {
+      top = await realpath(target).catch(() => undefined)
     }
+    if (top === undefined || !insideHome(top)) return
     const homeStat = await stat(dshHome).catch(() => undefined)
     const owner = homeStat && homeStat.uid !== 0 ? { uid: homeStat.uid, gid: homeStat.gid } : undefined
     const walk = async (path) => {
-      const st = await stat(path).catch(() => undefined)
-      if (st === undefined) return
-      const mode = st.isDirectory() ? 0o755 : 0o644
-      await chmod(path, mode).catch(() => {})
+      const st = await lstat(path).catch(() => undefined)
+      if (st === undefined || st.isSymbolicLink()) return
+      const mode = st.mode & 0o7777
+      const extra = st.isDirectory() ? 0o555 : 0o444
+      if ((mode & extra) !== extra) await chmod(path, mode | extra).catch(() => {})
       if (owner !== undefined) await chown(path, owner.uid, owner.gid).catch(() => {})
-      if (!st.isDirectory()) return
+      if (!st.isDirectory() || !recursive) return
       for (const entry of await readdir(path).catch(() => [])) await walk(join(path, entry))
     }
-    await walk(target)
+    await walk(top)
   } catch {
-    // permission fixes are best effort; the readable-check below still warns
+    // permission fixes are best effort; the install itself already succeeded
   }
 }
 
@@ -365,8 +426,16 @@ async function downloadBridge() {
     const missing = BRIDGE_FILES.filter((file) => !existsSync(join(stage, file)))
     if (missing.length > 0) throw new Error(`下载不完整：缺 ${missing.join(', ')}`)
     await mkdir(pluginsDir, { recursive: true })
-    await rm(bridgeDir, { recursive: true, force: true })
-    await rename(stage, bridgeDir)
+    // Keep the old bridge (local hardening, hand edits) before swapping in the
+    // pinned files; a failed swap puts it back.
+    const backup = await backupBridge()
+    try {
+      await rename(stage, bridgeDir)
+    } catch (error) {
+      if (backup !== undefined) await rename(backup, bridgeDir).catch(() => {})
+      throw error
+    }
+    if (backup !== undefined) console.log(`  （旧桥接备份在 ${backup}，确认无误后可删除）`)
     console.log(`  ${BRIDGE_FILES.length}/${BRIDGE_FILES.length} 完成`)
   } catch (error) {
     await rm(stage, { recursive: true, force: true })
@@ -374,13 +443,25 @@ async function downloadBridge() {
   }
 }
 
+/** Move the existing bridge aside to <bridgeDir>.bak-<timestamp>; returns that path. */
+async function backupBridge() {
+  if (!existsSync(bridgeDir)) return undefined
+  let target = `${bridgeDir}.bak-${stampNow()}`
+  for (let attempt = 2; existsSync(target); attempt += 1) target = `${bridgeDir}.bak-${stampNow()}-${attempt}`
+  await rename(bridgeDir, target)
+  console.log(`· 旧桥接已备份到 ${target}`)
+  return target
+}
+
 async function ensureBridge() {
   if (flag('no-bridge')) {
     console.log('· 跳过桥接（--no-bridge）')
     return
   }
-  if (appRuntime && !flag('force')) {
-    console.log('· 这是 dsh-go 手机本机引擎，桥接自带，跳过')
+  if (appRuntime) {
+    // A forced reinstall here would replace the app's built-in (and locally
+    // hardened) bridge, or register a duplicate one next to it.
+    console.log('· 这是 dsh-go 手机本机引擎，桥接自带，跳过（--force 也不会替换内置桥接）')
     return
   }
   const registered = deps()['dsh-go-bridge'] !== undefined
@@ -391,13 +472,28 @@ async function ensureBridge() {
   }
   if (complete && !flag('force')) {
     console.log('→ 桥接文件已就位，补充注册到 profile')
-    if (!flag('dry-run')) await fixPermissions(bridgeDir)
-    if (!flag('dry-run')) run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
-    else run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
+    await fixPermissions(bridgeDir)
+    run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
     return
+  }
+  const health = bridgeHealth()
+  if (health.present) {
+    if (health.differs.length > 0) {
+      console.log(`· 注意：现有桥接有 ${health.differs.length} 个文件与本安装器 pin 的版本不同，重装会覆盖这些本地改动：`)
+      console.log(`    ${health.differs.join(', ')}`)
+    } else if (!health.verified) {
+      console.log('· 自定义 BRIDGE_REF：无法逐文件比对，现有桥接会被整体覆盖')
+    } else if (health.missing.length === 0) {
+      console.log('· 现有桥接与 pin 一致')
+    }
+    if (health.extra.length > 0) {
+      const shown = health.extra.slice(0, 5).join(', ')
+      console.log(`· 现有桥接另有 ${health.extra.length} 个本安装器不管理的文件，会一起被备份：${shown}${health.extra.length > 5 ? '…' : ''}`)
+    }
   }
   if (flag('dry-run')) {
     console.log(`[dry-run] download ${BRIDGE_FILES.length} files from ${BRIDGE_REPO}@${BRIDGE_REF.slice(0, 7)} → ${bridgeDir}`)
+    if (health.present) console.log(`[dry-run] backup ${bridgeDir} → ${bridgeDir}.bak-<timestamp> before replacing it`)
     run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
     return
   }
@@ -451,16 +547,33 @@ async function ensurePlugin() {
       copiedSource = undefined
     }
   }
+  if (copiedSource !== undefined && isPseudoFsPath(copiedSource)) {
+    console.error(`--from 不能指向 /proc、/sys 或 /dev（${copiedSource}）：复制这类目录会卡死。`)
+    process.exit(2)
+  }
   if (copiedSource !== undefined) {
     const stable = join(pluginsDir, OWN.name)
-    if (flag('dry-run')) {
+    if (await samePath(copiedSource, stable)) {
+      // `--from` pointing at the host copy itself: deleting it first would
+      // delete the source and leave nothing to copy back.
+      console.log(`· 源目录就是本机插件副本（${stable}），跳过复制`)
+      spec = stable
+    } else if (flag('dry-run')) {
       console.log(`[dry-run] copy ${copiedSource} → ${stable} and install that copy`)
       spec = stable
     } else {
       await mkdir(pluginsDir, { recursive: true })
-      await rm(stable, { recursive: true, force: true })
-      await cp(copiedSource, stable, { recursive: true })
-      await fixPermissions(stable)
+      const stage = `${stable}.partial-${process.pid}`
+      await rm(stage, { recursive: true, force: true })
+      try {
+        await cp(copiedSource, stage, { recursive: true })
+        await fixPermissions(stage)
+        await rm(stable, { recursive: true, force: true })
+        await rename(stage, stable)
+      } catch (error) {
+        await rm(stage, { recursive: true, force: true }).catch(() => {})
+        throw new Error(`复制 ${copiedSource} 到 ${stable} 失败（${error.message}）；原副本保持不变`)
+      }
       spec = stable
     }
   }
@@ -469,18 +582,29 @@ async function ensurePlugin() {
     run('dsh', ['plugin', '--profile', profile, 'add', spec])
     const installedPath = join(profileDir, 'node_modules', OWN.name)
     await fixPermissions(installedPath)
-    await fixPermissions(join(profileDir, 'package.json'))
-    await fixPermissions(profileDir)
+    await fixPermissions(profilePkgPath, { recursive: false })
+    await fixPermissions(profileDir, { recursive: false })
   } catch (error) {
     if (from !== undefined || spec === ROOT || flag('dry-run')) throw error
     // Never leave the profile linked to an npx cache directory: copy the package
     // into the host plugin dir and install from there.
     const stable = join(pluginsDir, OWN.name)
+    if (await samePath(ROOT, stable)) {
+      throw new Error('安装器正运行在宿主插件副本里：npm 安装失败时不能用“复制自身”兜底（会先删掉这个目录）。请从 npx 缓存或源码目录重新运行。')
+    }
     console.log(`  npm 安装失败，复制当前包到 ${stable} 后再装（不依赖 npx 缓存）`)
     await mkdir(pluginsDir, { recursive: true })
-    await rm(stable, { recursive: true, force: true })
-    await cp(ROOT, stable, { recursive: true })
-    await fixPermissions(stable)
+    const stage = `${stable}.partial-${process.pid}`
+    await rm(stage, { recursive: true, force: true })
+    try {
+      await cp(ROOT, stage, { recursive: true })
+      await fixPermissions(stage)
+      await rm(stable, { recursive: true, force: true })
+      await rename(stage, stable)
+    } catch (copyError) {
+      await rm(stage, { recursive: true, force: true }).catch(() => {})
+      throw new Error(`复制 ${ROOT} 到 ${stable} 失败（${copyError.message}）；原副本保持不变`)
+    }
     run('dsh', ['plugin', '--profile', profile, 'add', stable])
   }
 }
@@ -488,15 +612,32 @@ async function ensurePlugin() {
 // ── status ──────────────────────────────────────────────────────────────────
 
 function status() {
-  const installed = installedPluginVersion()
+  const installedRaw = installedPluginVersion()
   const depVersion = typeof deps()[OWN.name] === 'string' ? deps()[OWN.name] : undefined
   console.log(`DSH_HOME     ${dshHome}`)
   console.log(`profile      ${profile}`)
-  if (appRuntime) console.log('桥接         本机引擎自带')
-  else if (bridgeComplete()) console.log(`桥接         已装（${BRIDGE_FILES.length} 个文件完整）`)
-  else if (existsSync(bridgeDir)) console.log('桥接         不完整，重跑 install 补齐')
-  else console.log('桥接         未装')
-  if (installed !== undefined) console.log(`用量插件     已装 ${installed}`)
+  if (appRuntime) {
+    console.log('桥接         本机引擎自带（不会被 --force 替换）')
+  } else if (!existsSync(bridgeDir)) {
+    console.log('桥接         未装')
+  } else {
+    // Existence is not integrity: a half-written or locally modified bridge is
+    // reported as such instead of pretending 33 files are fine.
+    const health = bridgeHealth()
+    if (health.missing.length > 0) {
+      console.log(`桥接         不完整（缺 ${health.missing.length} 个文件），重跑 install 补齐`)
+    } else if (!health.verified) {
+      console.log(`桥接         已装（${BRIDGE_FILES.length} 个文件；自定义 BRIDGE_REF，未做哈希核对）`)
+    } else if (health.differs.length > 0) {
+      const shown = health.differs.slice(0, 3).join(', ')
+      console.log(`桥接         已装但 ${health.differs.length} 个文件与 pin 不同（本地改动）：${shown}${health.differs.length > 3 ? '…' : ''}`)
+    } else {
+      console.log(`桥接         已装（${BRIDGE_FILES.length} 个文件，与 pin 一致）`)
+    }
+    if (deps()['dsh-go-bridge'] === undefined) console.log('             （未注册到 profile，重跑 install 补注册）')
+  }
+  if (typeof installedRaw === 'string') console.log(`用量插件     已装 ${installedRaw}`)
+  else if (installedRaw?.denied === true) console.log('用量插件     已装但当前用户读不到（owner/权限不一致；用 --force 重装或修权限）')
   else if (depVersion !== undefined) console.log(`用量插件     已注册 ${depVersion}（node_modules 缺失，重跑 install）`)
   else console.log('用量插件     未装')
 }
@@ -508,9 +649,16 @@ if (command === 'status') {
   process.exit(0)
 }
 
-requireEnv()
+if (flag('dry-run')) console.log('· dry-run：只打印计划，不检查也不执行 dsh / pnpm')
+else requireEnv()
 if (command === 'install' || command === 'bridge') await ensureBridge()
 if (command === 'install' || command === 'plugin') await ensurePlugin()
+
+if (flag('dry-run')) {
+  console.log(`
+[dry-run] 上面只是计划：没有下载、没有写入、没有改动 profile，也没有改任何权限。`)
+  process.exit(0)
+}
 
 console.log(`
 装好了。

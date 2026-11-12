@@ -40,7 +40,7 @@ function setup() {
   const captures = {}
   const ctx = {
     on: (name, fn) => { handlers[name] = fn },
-    effect: (fn) => { ctx._dispose = fn },
+    effect: (fn) => { ctx._dispose = fn() },
     inject: (deps, fn) => fn(ctx),
   }
   ctx.dshGo = {
@@ -64,10 +64,10 @@ test('panel, strip and turn notes render in both locales', async () => {
   await new Promise((resolve) => setTimeout(resolve, 250))
   try {
     const zh = pull(captures.panel.data, { sessionId: 'session-aaa' }, 'zh-CN')
-    assert.match(zh.updated, /^已更新 /)
+    assert.match(zh.updated, /^(已更新 |\d{2}\/\d{2} \d{2}:\d{2})/)
     assert.equal(zh.lastVerify, '未核对')
     const en = pull(captures.panel.data, { sessionId: 'session-aaa' }, 'en-US')
-    assert.match(en.updated, /^Updated /)
+    assert.match(en.updated, /^(Updated |\d{2}\/\d{2} \d{2}:\d{2})/)
     assert.equal(en.lastVerify, 'Not verified')
     const relay = pull(captures.panel.data, { sessionId: 'session-bbb' }, 'en-US')
     assert.equal(relay.session.hit, '—')
@@ -124,6 +124,72 @@ test('image export is deferred and stays scoped to its chat', { skip: !canRender
     assert.equal(other.imageSrc, 'asset:placeholder.png', 'another chat keeps the placeholder')
     ctx._dispose()
   } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(imageDir, { recursive: true, force: true })
+  }
+})
+
+// ── H13: deferred results honour the bridge's abort signal ─────────────────
+
+test('deferred actions stop as soon as the bridge aborts', async () => {
+  const { home, imageDir, ctx, captures } = setup()
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  try {
+    const aborted = new AbortController()
+    aborted.abort()
+    const refresh = captures.panel.actions.refresh({}, { locale: 'en-US' })
+    assert.deepEqual(await refresh.result(aborted.signal), [], 'aborted refresh returns nothing')
+    const verify = captures.panel.actions.verify({}, { locale: 'en-US' })
+    assert.deepEqual(await verify.result(aborted.signal), [], 'aborted verify returns nothing')
+    const before = readdirSync(imageDir).filter((name) => name.endsWith('.png')).length
+    const exported = captures.panel.actions.export({ sessionId: 'session-aaa' }, { locale: 'en-US' })
+    assert.deepEqual(await exported.result(aborted.signal), [], 'aborted export returns nothing')
+    assert.equal(readdirSync(imageDir).filter((name) => name.endsWith('.png')).length, before, 'aborted export must not render a card')
+    const panel = pull(captures.panel.data, { sessionId: 'session-aaa' }, 'en-US')
+    assert.equal(panel.lastVerify, 'Not verified', 'aborted verify must not store a result')
+  } finally {
+    ctx._dispose()
+    rmSync(home, { recursive: true, force: true })
+    rmSync(imageDir, { recursive: true, force: true })
+  }
+})
+
+// ── H14: the per-chat image cache is bounded and forgets deleted files ─────
+
+test('the image cache keeps at most 8 chats and drops files that are gone', { skip: !canRender() && 'host has no python3 + Pillow' }, async () => {
+  const { home, imageDir, ctx, captures } = setup()
+  try {
+    const ids = []
+    for (let i = 0; i < 10; i += 1) {
+      const id = `session-${String(i).padStart(3, '0')}`
+      ids.push(id)
+      const dir = join(home, 'sessions', 'proj', id)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'session.v4.jsonl.zstd'), z([header(id), call(1, 1, 10, 900, 5)]))
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const srcs = []
+    for (const id of ids) {
+      const exported = captures.panel.actions.export({ sessionId: id }, { locale: 'zh-CN' })
+      const effects = await exported.result()
+      const patch = effects.find((effect) => effect.type === 'patch')
+      srcs.push(patch.data.imageSrc)
+      assert.match(patch.data.imageSrc, /^asset:usage-\d{8}-\d{6}-[a-z0-9]+\.png$/)
+    }
+    for (const id of ids.slice(2)) {
+      const mine = pull(captures.panel.data, { sessionId: id }, 'zh-CN')
+      assert.notEqual(mine.imageSrc, 'asset:placeholder.png', `${id} should still show its card`)
+    }
+    for (const id of ids.slice(0, 2)) {
+      const evicted = pull(captures.panel.data, { sessionId: id }, 'zh-CN')
+      assert.equal(evicted.imageSrc, 'asset:placeholder.png', `${id} must fall off the 8-entry cache`)
+    }
+    const newest = ids[ids.length - 1]
+    rmSync(join(imageDir, srcs[srcs.length - 1].slice('asset:'.length)))
+    const gone = pull(captures.panel.data, { sessionId: newest }, 'zh-CN')
+    assert.equal(gone.imageSrc, 'asset:placeholder.png', 'a deleted card file falls back to the placeholder')
+  } finally {
+    ctx._dispose()
     rmSync(home, { recursive: true, force: true })
     rmSync(imageDir, { recursive: true, force: true })
   }
