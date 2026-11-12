@@ -128,6 +128,21 @@ rm -rf "$DSH_HOME/cache/dsh-go-token-usage"
 The bridge is separate: `dsh plugin --profile web remove dsh-go-bridge`, then delete
 `$DSH_HOME/dsh-go/plugins/dsh-go-bridge`.
 
+## Privacy: it needs no personal information
+
+- **No account, key or phone number**: the plugin never reads `~/.dsh/.credentials.yaml`, never reads token environment variables and never signs in anywhere;
+- **No network at runtime**: `lib/` and `scripts/` contain no `fetch` / `http` / `https` calls; the only request lives in the installer, downloading the bridge from the upstream dsh-Go repository at a pinned commit, and it uploads nothing;
+- **Only numbers from the local session logs**: it reads `usage` counters plus the provider and model names from each `assistant/message` in `$DSH_HOME/sessions`. Message bodies are not stored; the cache `index.json` holds dates, token counts, call counts, session UUIDs and model names only (no working-directory paths);
+- **Exported images stay on this host**: the PNG is written into the package's `assets/` and served to the app through the bridge's credential-checked local route. It contains token numbers, model/source names and a timestamp — no hostname, user name, path or conversation text;
+- **The published package carries no local data**: `.gitignore` excludes generated images and `prepack` deletes `assets/usage-*.png` before packing (verified: `npm pack` contains only `.gitkeep`).
+
+Check it yourself:
+
+```sh
+grep -rnE "fetch\(|https?://|password|secret|bearer|api[_-]?key" lib/ scripts/
+grep -rnE "credentials|DSH_HOME|sessions" lib/ scripts/
+```
+
 ## Development
 
 ```sh

@@ -122,6 +122,21 @@ rm -rf "$DSH_HOME/cache/dsh-go-token-usage"
 
 桥接如果不需要了：`dsh plugin --profile web remove dsh-go-bridge`，再删掉 `$DSH_HOME/dsh-go/plugins/dsh-go-bridge`。
 
+## 隐私：它不需要任何私人信息
+
+- **不要账号、不要密钥、不要手机号**：插件不读 `~/.dsh/.credentials.yaml`、不读环境变量里的 token、不做任何登录；
+- **运行时不联网**：`lib/` 和 `scripts/` 里没有 `fetch` / `http` / `https` 调用；唯一的网络请求在安装器里——从上游 dsh-Go 仓库的固定 commit 下载桥接，不上传任何东西；
+- **只读本机会话日志里的数字**：从 `$DSH_HOME/sessions` 里每条 `assistant/message` 取 `usage` 计数，以及 provider / 模型名；**不保存对话正文**，缓存 `index.json` 里只有日期、token 数、调用次数、会话 UUID、模型名（不存工作目录等路径）；
+- **导出的图片只存在本机**：PNG 写在插件包 `assets/`，由本机桥接的带凭据路由给 App，内容只有 token 数字、模型/来源名和时间，没有主机名、用户名、路径或对话内容；
+- **发布包不带本机数据**：仓库 `.gitignore` 忽略生成图，`prepack` 会在打包前删掉 `assets/usage-*.png`（已验证 `npm pack` 内容里只有 `.gitkeep`）。
+
+可以自己复核：
+
+```sh
+grep -rnE "fetch\(|https?://|password|secret|bearer|api[_-]?key" lib/ scripts/
+grep -rnE "credentials|DSH_HOME|sessions" lib/ scripts/
+```
+
 ## 开发
 
 ```sh

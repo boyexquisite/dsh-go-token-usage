@@ -49,7 +49,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --test test/*.test.js && node -e \"import('./lib/index.js').then(()=>console.log('host half loads'))\""
+    "check": "node --test test/*.test.js && node -e \"import('./lib/index.js').then(()=>console.log('host half loads'))\"",
+    "prepack": "node scripts/clean-assets.mjs"
   },
   "dsh": {
     "bundle": {
