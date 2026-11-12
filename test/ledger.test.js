@@ -164,3 +164,138 @@ test('recount re-reads the logs and agrees with the live ledger', async () => {
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('a vanished log keeps its history instead of dropping it to zero', async () => {
+  const { home, file } = makeHome()
+  try {
+    writeFileSync(file, frame([header('session-aaa'), call(1, DAY(1), 10, 100, 5), call(2, NOW, 20, 200, 6)]))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 341)
+    assert.equal(ledger.sourceState().lostFiles, 0)
+
+    // The engine (or the user deleting the chat) removes the log file.
+    rmSync(file)
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 341, 'billed usage must not disappear with the log')
+    assert.equal(ledger.allTime().calls, 2)
+    const state = ledger.sourceState()
+    assert.equal(state.scanned, true)
+    assert.equal(state.logFiles, 0)
+    assert.equal(state.lostFiles, 1)
+    assert.equal(totalTokens(state.lostTotals), 341)
+
+    // …and the cache carries the same history into the next process.
+    ledger.dispose()
+    const restarted = new UsageLedger({ home, now: () => NOW })
+    assert.equal(totalTokens(restarted.allTime()), 341)
+    assert.equal(restarted.sourceState().lostFiles, 1)
+    restarted.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a log that comes back is re-read and cleared from the lost list', async () => {
+  const { home, file } = makeHome()
+  try {
+    writeFileSync(file, frame([header('session-aaa'), call(1, NOW, 10, 100, 5)]))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    rmSync(file)
+    await ledger.refresh()
+    assert.equal(ledger.sourceState().lostFiles, 1)
+    writeFileSync(file, frame([header('session-aaa'), call(1, NOW, 10, 100, 5), call(2, NOW, 3, 30, 4)]))
+    await ledger.refresh()
+    assert.equal(ledger.sourceState().lostFiles, 0)
+    assert.equal(totalTokens(ledger.allTime()), 152)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('live calls survive a restart through the index', () => {
+  const { home } = makeHome()
+  try {
+    const usage = { input: 1, cached: 10, cacheWrite: 0, output: 1, reasoning: 0, calls: 1 }
+    const first = new UsageLedger({ home, now: () => NOW })
+    first.noteLive('session-aaa', 5, NOW, usage, 'm1', 2, 'p')
+    assert.equal(first.pendingCount(), 1)
+    first.dispose() // flush the index
+    const second = new UsageLedger({ home, now: () => NOW })
+    assert.equal(second.pendingCount(), 1)
+    assert.equal(totalTokens(second.window(1)), 12)
+    assert.equal(second.sessionTurnsOf('session-aaa').get(2).calls, 1)
+    second.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('only the highest format generation in a session directory is counted', async () => {
+  const { home, dir } = makeHome()
+  try {
+    // A migrated session keeps its older generation next to the current one.
+    writeFileSync(join(dir, 'session.v3.jsonl.zstd'), frame([header('session-aaa'), call(1, NOW, 10, 100, 5)]))
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), frame([header('session-aaa'), call(1, NOW, 10, 100, 5), call(2, NOW, 2, 20, 2)]))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 139)
+    assert.equal(ledger.allTime().calls, 2)
+    assert.equal(ledger.sourceState().logFiles, 1)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('uncompressed logs (compression: none) are read too', async () => {
+  const { home, dir } = makeHome()
+  try {
+    writeFileSync(join(dir, 'session.v4.jsonl'), [header('session-aaa'), call(1, NOW, 10, 100, 5)].join('\n') + '\n')
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(totalTokens(ledger.allTime()), 115)
+    assert.equal(ledger.sourceState().logFiles, 1)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a missing sessions root is reported instead of looking like zero usage', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'dsh-noroot-'))
+  try {
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    const state = ledger.sourceState()
+    assert.equal(state.scanned, true)
+    assert.equal(state.rootMissing, true)
+    assert.equal(state.logFiles, 0)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('an unreadable sessions root does not mark history as lost', async () => {
+  const { home, file } = makeHome()
+  try {
+    writeFileSync(file, frame([header('session-aaa'), call(1, NOW, 10, 100, 5)]))
+    const ledger = new UsageLedger({ home, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(ledger.sourceState().lostFiles, 0)
+
+    // A transient root failure must not be mistaken for deleted logs.
+    rmSync(join(home, 'sessions'), { recursive: true, force: true })
+    await ledger.refresh()
+    const state = ledger.sourceState()
+    assert.equal(state.rootMissing, true)
+    assert.equal(state.lostFiles, 0)
+    assert.equal(totalTokens(ledger.allTime()), 115)
+    ledger.dispose()
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

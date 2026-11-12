@@ -33,7 +33,7 @@ npx dsh-go-token-usage install
 or straight into a profile:
 
 ```sh
-dsh plugin --profile web add dsh-go-token-usage@0.1.0
+dsh plugin --profile web add dsh-go-token-usage
 ```
 
 Then switch hosts (or reopen the app) once so it re-reads the plugin inventory.
@@ -46,7 +46,7 @@ Then switch hosts (or reopen the app) once so it re-reads the plugin inventory.
 - **This host only**: counts this `$DSH_HOME`; other hosts count separately. Subagents count in the windows and total, not in "this chat".
 - **First run takes a few seconds**: the initial scan of existing sessions is about 5 s; numbers appear shortly after.
 - **Dashes**: a relay that does not report cache counters shows "—" for the hit rate; unreported reasoning shows "—".
-- **History depends on logs**: deleting session logs or switching `$DSH_HOME` loses the history; days follow the host's local time zone.
+- **Logs can vanish without zeroing history**: everything the plugin has read is kept in its own cache, so cleaning up logs or deleting a chat keeps the numbers and the panel says "N log(s) gone — history kept from cache". Logs that vanished before the plugin ever read them (for example, cleaned up before installing) cannot be recovered; the panel then says "No session logs here — live calls only" instead of silently showing 0. Switching `$DSH_HOME` means a different ledger; days follow the host's local time zone.
 
 ## Compatibility
 
@@ -65,8 +65,10 @@ No account, key or credential is read, and nothing is sent over the network at r
 - "This chat" counts the session itself; subagent calls count in the windows and the total;
 - Fork/seed logs skip the inherited prefix (the `session/end-seed` marker), so nothing is counted twice;
 - A relay that omits cache counters shows a dash instead of a fake 0%; unreported reasoning shows a dash too;
-- The first run scans existing sessions (~5 s), then only changed files are read; the cache in `$DSH_HOME/cache/dsh-go-token-usage/index.json` holds numbers, model names and local session-file paths only;
-- Verify re-counts every log: `Verified · …` when it matches, `Diff N calls` for calls not yet flushed to disk.
+- The first run scans existing sessions (~5 s), then only changed files are read; the cache in `$DSH_HOME/cache/dsh-go-token-usage/index.json` holds numbers, model names, local session-file paths and live calls not yet flushed to disk;
+- Each session is read from its current format generation only (highest version in the file name), so older generations left by a format migration are not counted twice; uncompressed logs (`compression: none`) are read too;
+- History read before a log disappeared stays counted and is flagged as missing from disk (the panel and Verify both say so);
+- Verify re-counts every log: `Verified · …` when it matches, `Diff N calls` for calls not yet flushed to disk; cached history whose log is gone is left out of the comparison and named (`N log(s) gone`).
 
 </details>
 

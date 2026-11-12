@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
 import { UsageLedger } from '../lib/ledger.js'
-import { stripData, summaryText, turnNoteData, usageData, usageView } from '../lib/view.js'
+import { stripData, summaryText, turnNoteData, usageData, usageView, verifyLine } from '../lib/view.js'
 
 const NOW = new Date(2026, 10, 12, 12, 0, 0).getTime()
 const header = JSON.stringify({ type: 'session', version: 4, id: 'session-aaa', createdAt: NOW, cwd: '/p' })
@@ -180,6 +180,84 @@ test('cache hit rate shows an em dash when the provider omits cache counters', a
     assert.equal(notes['1'].text, '110')
     ledger.dispose()
   } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('the panel explains a vanished log instead of showing zero history', async () => {
+  const home = homeWithLog()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  const file = join(home, 'sessions', 'proj', 'session-aaa', 'session.v4.jsonl.zstd')
+  rmSync(file)
+  try {
+    await ledger.refresh()
+    const data = usageData(ledger, { sessionId: 'session-aaa' }, 'zh-CN')
+    assert.equal(data.all.total, '6.09k', 'the numbers read from that log stay counted')
+    assert.equal(data.historyNote, '1 个日志已不存在，历史按缓存保留')
+    assert.ok(data.updated.includes('历史按缓存保留'), data.updated)
+    assert.match(usageData(ledger, {}, 'en-US').historyNote, /log\(s\) gone/)
+    // Verify must not call this a mismatch: the log is gone, not the number wrong.
+    const line = verifyLine(ledger, await ledger.recount(), 'zh-CN')
+    assert.ok(line.startsWith('核对：一致'), line)
+    assert.ok(line.includes('1 个日志已丢失'), line)
+  } finally {
+    ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('a host with no logs at all says so; a healthy host says nothing extra', async () => {
+  const bare = mkdtempSync(join(tmpdir(), 'dsh-bare-'))
+  try {
+    mkdirSync(join(bare, 'sessions', 'proj'), { recursive: true })
+    const ledger = new UsageLedger({ home: bare, now: () => NOW })
+    await ledger.refresh()
+    const data = usageData(ledger, {}, 'zh-CN')
+    assert.equal(data.historyNote, '本机没有会话日志，只含实时调用')
+    assert.ok(data.updated.includes('只含实时调用'))
+    ledger.dispose()
+  } finally {
+    rmSync(bare, { recursive: true, force: true })
+  }
+
+  // A host where the sessions root cannot be read at all gets its own wording.
+  const noRoot = mkdtempSync(join(tmpdir(), 'dsh-noroot-view-'))
+  const orphan = new UsageLedger({ home: noRoot, now: () => NOW })
+  await orphan.refresh()
+  try {
+    assert.equal(usageData(orphan, {}, 'zh-CN').historyNote, '找不到会话日志目录，历史不可用')
+    assert.equal(usageData(orphan, {}, 'en-US').historyNote, 'No session log folder — history unavailable')
+  } finally {
+    orphan.dispose()
+    rmSync(noRoot, { recursive: true, force: true })
+  }
+
+  const home = homeWithLog()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  try {
+    const data = usageData(ledger, {}, 'zh-CN')
+    assert.equal(data.historyNote, '')
+    assert.ok(data.updated.startsWith('已更新'))
+    assert.ok(!data.updated.includes('·'))
+  } finally {
+    ledger.dispose()
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('verifyLine: consistent, pending live calls, and the plain diff', async () => {
+  const home = homeWithLog()
+  const ledger = new UsageLedger({ home, now: () => NOW })
+  await ledger.refresh()
+  try {
+    assert.equal(verifyLine(ledger, await ledger.recount(), 'zh-CN'), '核对：一致 · 6.09k · 3 次')
+    ledger.noteLive('session-aaa', 99, NOW, { input: 1, cached: 10, cacheWrite: 0, output: 1, reasoning: 0, calls: 1 }, 'm1', 4, 'p')
+    assert.equal(verifyLine(ledger, await ledger.recount(), 'zh-CN'), '核对：差 1 次')
+    assert.ok(verifyLine(ledger, await ledger.recount(), 'en-US').startsWith('Diff'))
+  } finally {
+    ledger.dispose()
     rmSync(home, { recursive: true, force: true })
   }
 })
