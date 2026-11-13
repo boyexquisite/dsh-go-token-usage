@@ -20,7 +20,7 @@ The generated usage card (sample data):
 |---|---|
 | Status strip | `Chat 8.8M · today 245M · off-peak` — the tail is DeepSeek's peak/off-peak tag (the icon swaps between coin and warning); tap to open the panel |
 | Panel | All time / this chat / today / last 7 days / last 30 days, hit rate, daily average, days covered, today's models labelled official / relay / subscription |
-| Peak rate panel | Current tier, next switch, and the flash / pro price table in USD per million tokens |
+| Peak rate panel | Current tier, next switch, and flash / pro prices for input / cache hit / output (CNY in the zh UI, USD in the en UI) |
 | Turn note | Tokens and cache hits of each reply (just tokens when a relay reports no cache counters at all) |
 | Generate image | Draws a portrait card on the host and shows it at the bottom of the panel (a placeholder until you generate it) — screenshot to share (needs `python3` + Pillow) |
 | Verify | Re-counts the raw logs and compares with the panel |
