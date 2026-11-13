@@ -7,7 +7,7 @@
 - 「核对」不再误报：会话还在写入、或某个目录暂时读不了时，不再显示「差 N tokens」，改为说明「N 处读不了」；面板会提示读不了的目录和损坏的缓存记录，历史数字继续保留。
 - 修复出图失败与卡死：模型名含换行/控制字符不再让出图必挂；临时目录落在异常 `TMPDIR`（如 `/proc`）时不再卡住宿主；没有中文字体时自动改用英文标签；PNG 次要文字对比度提高。
 - 极端数值与超长名称不再撑破界面：超大 token 数、超长模型名不会让状态条/回合脚注/面板数据超限或被硬截断；复制统计与面板统一显示 6 个模型。
-- 统计口径与健壮性：零用量重结算、失败/重试调用、缓存损坏、保存与卸载竞态、不可读日志等边缘场景与引擎对齐；196 份真实日志与引擎投影逐会话一致。
+- 统计口径与健壮性：零用量重结算、失败/重试调用、缓存损坏、保存与卸载竞态、不可读日志等边缘场景与引擎对齐；196 份真实日志按引擎记账口径逐会话对账一致。
 - 安装器与发版更安全：不再修改 `$DSH_HOME` 外的文件权限；`--from` 指向自身副本不再自毁；`--force` 重装桥接前先备份并列出本地改动，手机内置桥接不被替换；`--dry-run` 零写入；拒绝 `/proc` 等伪文件系统上的 `DSH_HOME`。发布脚本预检分支/版本/CHANGELOG/tag 并 atomic push，`publish` 只由 tag 触发，另加 main/PR 的 Node 22/24 测试。
 
 ### English
@@ -21,8 +21,8 @@
 - Absurd totals and very long model names can no longer overflow the strip, turn notes, panel
   data or copied summary; the copy summary lists the same six models as the panel.
 - Accounting is aligned with the engine on zero-token re-settlements, failed/retried calls,
-  cache damage, save/dispose races and unreadable logs; all 196 real logs match the engine
-  projection session by session.
+  cache damage, save/dispose races and unreadable logs; all 196 real logs match the engine's
+  accounting rule session by session.
 - Safer installer and releases: it no longer changes permissions outside `$DSH_HOME`,
   `--from` pointed at its own copy no longer self-destructs, `--force` backs up the old bridge
   and lists local modifications first, the app's built-in bridge is never replaced, `--dry-run`

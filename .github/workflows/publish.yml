@@ -37,6 +37,13 @@ jobs:
             echo "tag ${GITHUB_REF_NAME} does not match package.json version $VERSION"
             exit 1
           fi
+      - name: Check tag commit is on main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+            echo "tag commit is not on origin/main; releases must be cut from main" >&2
+            exit 1
+          fi
       - name: Check CHANGELOG has a non-empty entry for this version
         run: |
           VERSION=$(node -p "require('./package.json').version")

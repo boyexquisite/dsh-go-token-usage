@@ -20,7 +20,7 @@ The generated usage card (sample data):
 |---|---|
 | Status strip | `Chat 8.8M · today 245M`; tap to open the panel |
 | Panel | All time / this chat / today / last 7 days / last 30 days, hit rate, daily average, days covered, today's models labelled official / relay / subscription |
-| Turn note | Tokens and cache hits of each reply |
+| Turn note | Tokens and cache hits of each reply (just tokens when a relay reports no cache counters at all) |
 | Generate image | Draws a portrait card on the host and shows it at the bottom of the panel (a placeholder until you generate it) — screenshot to share (needs `python3` + Pillow) |
 | Verify | Re-counts the raw logs and compares with the panel |
 
@@ -47,6 +47,7 @@ The installer also accepts three subcommands — `bridge` (bridge only), `plugin
 - **Generate image**: needs `python3` + Pillow and a CJK font on the host (set `DSH_TOKEN_USAGE_PYTHON` to an absolute path if it lives somewhere unusual; same-named binaries in world-writable PATH directories are ignored) (Noto CJK / WenQuanYi / Microsoft YaHei / PingFang; with no CJK font at all it automatically draws the English labels instead of tofu). It tells you when Python/Pillow is missing. Drawing is deferred, so a slow render does not lose the tap. The card shows only in the chat that generated it; PNGs stay in the package's `assets/` (latest three kept, and images other chats are still showing are protected). There is no long-press save in the app, so screenshot it.
 - **This host only**: counts this `$DSH_HOME`; other hosts count separately. Subagents count in the windows and total, not in "this chat".
 - **First run takes a few seconds**: the initial scan of existing sessions takes about 5–10 s depending on log size; numbers appear shortly after. The first cold scan reads each zstd log file whole (decompression itself is streamed), so the memory peak is about the size of the largest single log file (the per-file cap defaults to 128MB).
+- **The panel names data gaps**: unreadable directories show "N dir(s) unreadable — new logs may be missing"; damaged cache records show "N cache record(s) corrupt — history may be incomplete".
 - **Hit rate**: exact when every call reported cache counters; `≈xx%` when only some did (a single relay call no longer blanks the whole number, and a relay is never read as 0%); "—" only when nothing reported them. Unreported reasoning shows "—".
 - **Logs can vanish without zeroing history**: everything the plugin has read is kept in its own cache, so cleaning up logs or deleting a chat keeps the numbers and the panel says "N log(s) gone — history kept from cache". Logs that vanished before the plugin ever read them (for example, cleaned up before installing) cannot be recovered; the panel then says "No session logs here — live calls only" instead of silently showing 0. Switching `$DSH_HOME` means a different ledger; days follow the host's local time zone.
 
