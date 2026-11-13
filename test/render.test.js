@@ -329,9 +329,11 @@ test('render.py falls back to English labels when no CJK font is available', { s
     assert.equal(forced.cjk, false)
     assert.equal(forced.title, 'Token usage')
     assert.ok(statSync(join(dir, 'card.png')).size > 5000)
+    // The host (or CI runner) may or may not have a CJK font: the reported flag
+    // and the drawn title must always agree, whichever way it goes.
     const normal = JSON.parse(run({ DSH_TOKEN_USAGE_FORCE_ASCII: '' }))
-    assert.equal(normal.cjk, true)
-    assert.equal(normal.title, 'Token 用量')
+    if (normal.cjk) assert.equal(normal.title, 'Token 用量')
+    else assert.equal(normal.title, 'Token usage')
     ledger.dispose()
   } finally {
     rmSync(home, { recursive: true, force: true })

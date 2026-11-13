@@ -59,7 +59,7 @@ jobs:
       - name: Test
         run: |
           # render tests draw a real PNG unless Pillow is missing
-          sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil fonts-noto-cjk >/dev/null
           npm test
       - name: Check whether this version is already on npm
         id: check
