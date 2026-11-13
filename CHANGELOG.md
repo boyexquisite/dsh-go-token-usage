@@ -1,5 +1,23 @@
 # Changelog / 更新日志
 
+## 0.2.9
+
+### 中文
+
+- 状态条尾部跟 DeepSeek 峰谷价：`本对话 8.8M · 今日 245M · 谷价`，图标随状态换成金币 / 警示。峰时只算工作日 09:00–12:00、14:00–18:00（北京时间），其余时段含整个周末和法定节假日一律半价。
+- 新增「峰谷价」面板：当前计费、下次切换时刻、flash / pro 的峰谷价目表（美元 / 百万 token）。
+- 节假日内置国办 2026、2027 两年安排；调休上班的周末仍按低谷算。2028 年安排发布后需要补表。
+- 状态条每 60 秒自检一次峰谷标签：整点切换时即使账本没有新调用，胶囊也会跟着变。
+- 分隔符间距统一；24 字预算先保完整写法，再压分隔符，最后才退成只报今日。
+
+### English
+
+- The status strip ends with DeepSeek's peak/off-peak tag (`Chat 8.8M · today 245M · off-peak`) and the icon swaps between coin and warning. Peak is weekdays 09:00–12:00 and 14:00–18:00 (UTC+8); everything else — weekends and public holidays included — is half price.
+- New "Peak rate" panel: current tier, next switch, and the flash / pro price table in USD per million tokens.
+- Holidays cover China's 2026 and 2027 schedules; make-up working weekends still count as off-peak. The 2028 table has to be added once it is published.
+- The strip re-checks the peak tag every 60 s, so it flips at a boundary even when no new model call arrives.
+- Even separator spacing; the 24-character budget keeps the full form first, then tightens separators, and only then drops the per-chat number.
+
 ## 0.2.8
 
 ### 中文

@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-给 [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) 手机 App 的原生 Token 用量插件：输入框上方的状态条、对话「插件」页签里的面板、每条回复的用量脚注，还能生成一张用量卡片。数字全部来自本机会话日志，运行时不联网、不估算。
+给 [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) 手机 App 的原生 Token 用量插件：输入框上方的状态条、对话「插件」页签里的面板、每条回复的用量脚注，还能生成一张用量卡片。状态条尾部还会跟一个 DeepSeek 峰谷价标签，点开有价目表。数字全部来自本机会话日志，运行时不联网、不估算。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/boyexquisite/dsh-go-token-usage/main/docs/panel.jpg" width="300" alt="在 dsh-go App 侧栏「插件」页签里的实际样子">
@@ -18,8 +18,9 @@
 
 | 位置 | 内容 |
 |---|---|
-| 状态条 | `本对话 8.8M · 今日 245M`，点开面板 |
+| 状态条 | `本对话 8.8M · 今日 245M · 谷价`，尾部跟 DeepSeek 峰谷价（图标随状态换成金币 / 警示），点开面板 |
 | 面板 | 累计 / 本对话 / 今日 / 近 7 天 / 近 30 天；命中率、日均、覆盖天数；今日模型（标注官方 / 中转 / 订阅来源） |
+| 峰谷价面板 | 当前计费、下次切换时刻、flash / pro 的峰谷价目表（美元 / 百万 token） |
 | 回合脚注 | 每条回复这一轮的 tokens 与缓存命中（中转完全不报缓存计数时只显示 tokens） |
 | 生成图片 | 主机异步画一张竖版卡片，直接显示在面板底部（未生成时是占位图），截图分享（需要 `python3` + Pillow）；每张卡只显示在生成它的对话里 |
 | 核对 | 用原始日志整卷重算，和面板数字对账 |

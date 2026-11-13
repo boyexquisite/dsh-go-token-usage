@@ -24,6 +24,16 @@ test('Chinese public holidays are off-peak all day', () => {
   assert.equal(isPeakAt(cst(2026, 2, 24, 10, 0)), true) // 节后周二
 })
 
+test('the 2027 schedule is covered too', () => {
+  assert.equal(isPeakAt(cst(2027, 1, 1, 10, 0)), false) // 元旦（周五）
+  assert.equal(isPeakAt(cst(2027, 1, 4, 10, 0)), true) // 节后周一
+  assert.equal(isPeakAt(cst(2027, 2, 5, 10, 0)), false) // 春节（周五）
+  assert.equal(isPeakAt(cst(2027, 2, 15, 10, 0)), true) // 节后周一
+  assert.equal(isPeakAt(cst(2027, 5, 3, 10, 0)), false) // 劳动节（周一）
+  assert.equal(isPeakAt(cst(2027, 10, 1, 10, 0)), false) // 国庆（周五）
+  assert.equal(isPeakAt(cst(2027, 10, 8, 10, 0)), true) // 节后周五
+})
+
 test('strip suffix is short and localized', () => {
   const peak = cst(2026, 11, 13, 10, 0)
   const off = cst(2026, 11, 13, 20, 0)
@@ -50,6 +60,11 @@ test('panel data and view agree on the state', () => {
   assert.equal(off.tone, 'good')
   assert.ok(off.rate.includes('谷价'))
   assert.ok(off.next.includes('周一 09:00'), off.next)
+
+  // 整点间隔写成 "9h" 而不是 "9h00m"。
+  const midnight = peakPanelData(cst(2026, 11, 13, 0, 0), 'zh-CN')
+  assert.ok(midnight.next.includes('9h（'), midnight.next)
+  assert.ok(!midnight.next.includes('h00m'), midnight.next)
 
   const view = peakPanelView({ locale: 'zh-CN' })
   assert.equal(view.type, 'stack')

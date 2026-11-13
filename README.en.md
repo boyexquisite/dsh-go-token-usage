@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-Native token usage for the [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) phone app: a status strip above the composer, a panel in the chat's Plugins tab, a note under every reply, and a generated usage card. Every number comes from this host's own session logs — no network at runtime, no estimates.
+Native token usage for the [dsh-go](https://github.com/ccch1mneyyy/dsh-Go) phone app: a status strip above the composer, a panel in the chat's Plugins tab, a note under every reply, and a generated usage card. The strip also ends with DeepSeek's peak/off-peak tag, and a price-table panel comes with it. Every number comes from this host's own session logs — no network at runtime, no estimates.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/boyexquisite/dsh-go-token-usage/main/docs/panel.jpg" width="300" alt="The panel in the app's Plugins tab">
@@ -18,8 +18,9 @@ The generated usage card (sample data):
 
 | Where | What |
 |---|---|
-| Status strip | `Chat 8.8M · today 245M`; tap to open the panel |
+| Status strip | `Chat 8.8M · today 245M · off-peak` — the tail is DeepSeek's peak/off-peak tag (the icon swaps between coin and warning); tap to open the panel |
 | Panel | All time / this chat / today / last 7 days / last 30 days, hit rate, daily average, days covered, today's models labelled official / relay / subscription |
+| Peak rate panel | Current tier, next switch, and the flash / pro price table in USD per million tokens |
 | Turn note | Tokens and cache hits of each reply (just tokens when a relay reports no cache counters at all) |
 | Generate image | Draws a portrait card on the host and shows it at the bottom of the panel (a placeholder until you generate it) — screenshot to share (needs `python3` + Pillow) |
 | Verify | Re-counts the raw logs and compares with the panel |
