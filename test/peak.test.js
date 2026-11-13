@@ -70,14 +70,10 @@ test('panel data and view agree on the state', () => {
   assert.equal(view.type, 'stack')
   assert.equal(view.v, 2)
   assert.ok(JSON.stringify(view).length < 8000)
-  // 每个模型的卡片：标题 + 单位说明 + 三行键值（输入 / 缓存命中 / 输出）。
-  const flash = view.children[1]
-  assert.equal(flash.children[0].text, 'flash')
-  assert.ok(flash.children[1].text.includes('美元每百万 token'), flash.children[1].text)
-  assert.deepEqual(flash.children[2].items, [
-    ['输入', '$0.15 / $0.30'],
-    ['缓存命中', '$0.003 / $0.006'],
-    ['输出', '$0.60 / $1.20'],
-  ])
+  // 每个模型的卡片：标题 + 三行紧凑价格（输入 / 缓存命中 / 输出），人民币计价。
+  const flash = view.children.find((c) => c.type === 'stack' && c.children[0]?.text === 'flash')
+  assert.ok(flash, 'flash card')
+  assert.deepEqual(flash.children.slice(1).map((c) => c.text), ['输入 1 / 2', '缓存命中 0.02 / 0.04', '输出 4 / 8'])
+  assert.ok(JSON.stringify(view).includes('元'), 'CNY unit')
   assert.equal(peakPanelView({ locale: 'en-US' }).type, 'stack')
 })
