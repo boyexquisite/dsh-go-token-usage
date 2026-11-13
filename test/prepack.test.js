@@ -77,6 +77,23 @@ test('prepack exits 0 when the package has no assets directory', () => {
   }
 })
 
+test('prepack fails closed when a usage image path cannot be removed (root-safe variant)', () => {
+  // 原 chmod 测试在 root 下会被 skip；这里用“同名目录 + 非递归 rm”稳定复现删不掉的分支，
+  // 保证 fail-closed（拒绝打包）在所有 uid 下都有覆盖。
+  const root = makePackage()
+  const image = 'usage-20261113-010531-9128sy.png'
+  try {
+    mkdirSync(join(root, 'assets', image))
+    writeFileSync(join(root, 'assets', image, 'not-an-image'), 'x')
+    const result = run(root)
+    assert.notEqual(result.status, 0, 'a usage image that cannot be removed must block packing')
+    assert.match(result.stderr, /cannot remove|refusing to pack/)
+    assert.ok(assets(root).includes(image), 'the card path is still there, so packing must have failed')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('prepack fails closed when assets is a file instead of a directory', () => {
   const root = makePackage()
   try {
