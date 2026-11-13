@@ -68,6 +68,12 @@ test('panel data and view agree on the state', () => {
 
   const view = peakPanelView({ locale: 'zh-CN' })
   assert.equal(view.type, 'stack')
+  assert.equal(view.v, 2)
   assert.ok(JSON.stringify(view).length < 8000)
+  // 每个模型的卡片里，命中缓存价作为小字挂在输入下面，价格行不再用三列表格。
+  const flash = view.children[1]
+  assert.equal(flash.children[0].text, 'flash')
+  assert.ok(flash.children[1].items[0].subtitle.includes('缓存命中'), flash.children[1].items[0].subtitle)
+  assert.ok(flash.children[1].items[0].trailing.includes('谷'), flash.children[1].items[0].trailing)
   assert.equal(peakPanelView({ locale: 'en-US' }).type, 'stack')
 })
