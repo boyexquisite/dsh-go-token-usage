@@ -70,11 +70,14 @@ test('panel data and view agree on the state', () => {
   assert.equal(view.type, 'stack')
   assert.equal(view.v, 2)
   assert.ok(JSON.stringify(view).length < 8000)
-  // 每个模型的卡片里，命中缓存价作为小字挂在输入下面，价格行左右对齐、不用三列表格。
+  // 每个模型的卡片：标题 + 单位说明 + 三行键值（输入 / 缓存命中 / 输出）。
   const flash = view.children[1]
   assert.equal(flash.children[0].text, 'flash')
-  assert.deepEqual(flash.children[1].items, [['输入', '谷 $0.15 / 峰 $0.30']])
-  assert.ok(flash.children[2].text.includes('缓存命中'), flash.children[2].text)
-  assert.deepEqual(flash.children[3].items, [['输出', '谷 $0.60 / 峰 $1.20']])
+  assert.ok(flash.children[1].text.includes('美元每百万 token'), flash.children[1].text)
+  assert.deepEqual(flash.children[2].items, [
+    ['输入', '$0.15 / $0.30'],
+    ['缓存命中', '$0.003 / $0.006'],
+    ['输出', '$0.60 / $1.20'],
+  ])
   assert.equal(peakPanelView({ locale: 'en-US' }).type, 'stack')
 })
