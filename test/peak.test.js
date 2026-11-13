@@ -1,0 +1,53 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { isPeakAt, peakPanelData, peakPanelView, stripSuffix } from '../lib/peak.js'
+
+// 构造北京时间对应的 UTC 毫秒（中国标准时间固定 UTC+8）。
+const cst = (y, m, d, h, mi) => Date.UTC(y, m - 1, d, h - 8, mi)
+
+test('peak is weekdays 09:00-12:00 and 14:00-18:00 in UTC+8', () => {
+  assert.equal(isPeakAt(cst(2026, 11, 13, 8, 59)), false)
+  assert.equal(isPeakAt(cst(2026, 11, 13, 9, 0)), true)
+  assert.equal(isPeakAt(cst(2026, 11, 13, 11, 59)), true)
+  assert.equal(isPeakAt(cst(2026, 11, 13, 12, 0)), false)
+  assert.equal(isPeakAt(cst(2026, 11, 13, 14, 0)), true)
+  assert.equal(isPeakAt(cst(2026, 11, 13, 17, 59)), true)
+  assert.equal(isPeakAt(cst(2026, 11, 13, 18, 0)), false)
+  // 周六整天低谷。
+  assert.equal(isPeakAt(cst(2026, 11, 14, 10, 0)), false)
+})
+
+test('Chinese public holidays are off-peak all day', () => {
+  assert.equal(isPeakAt(cst(2026, 10, 1, 10, 0)), false) // 国庆（周四）
+  assert.equal(isPeakAt(cst(2026, 10, 8, 10, 0)), true) // 节后周四
+  assert.equal(isPeakAt(cst(2026, 2, 15, 10, 0)), false) // 春节（周日）
+  assert.equal(isPeakAt(cst(2026, 2, 24, 10, 0)), true) // 节后周二
+})
+
+test('strip suffix is short and localized', () => {
+  const peak = cst(2026, 11, 13, 10, 0)
+  const off = cst(2026, 11, 13, 20, 0)
+  assert.equal(stripSuffix(peak, 'zh-CN'), ' · 峰价标准')
+  assert.equal(stripSuffix(off, 'zh-CN'), ' · 谷价5折')
+  assert.equal(stripSuffix(peak, 'en-US'), ' · peak')
+  assert.equal(stripSuffix(off, 'en-US'), ' · off-peak')
+  // 尾部标签要给 token 数字留出足够位置。
+  assert.ok([...stripSuffix(peak, 'zh-CN')].length <= 7)
+})
+
+test('panel data and view agree on the state', () => {
+  const peak = peakPanelData(cst(2026, 11, 13, 10, 0), 'zh-CN')
+  assert.equal(peak.tone, 'warn')
+  assert.ok(peak.rate.includes('峰价'))
+  assert.ok(peak.next.includes('12:00'))
+
+  const off = peakPanelData(cst(2026, 11, 13, 20, 0), 'zh-CN')
+  assert.equal(off.tone, 'good')
+  assert.ok(off.rate.includes('谷价'))
+  assert.ok(off.next.includes('周一 09:00'), off.next)
+
+  const view = peakPanelView({ locale: 'zh-CN' })
+  assert.equal(view.type, 'stack')
+  assert.ok(JSON.stringify(view).length < 8000)
+  assert.equal(peakPanelView({ locale: 'en-US' }).type, 'stack')
+})

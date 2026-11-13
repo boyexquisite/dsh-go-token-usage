@@ -142,7 +142,7 @@ test('strip and turn notes stay inside the protocol limits', async () => {
   await ledger.refresh()
   try {
     for (const locale of ['zh-CN', 'en-US']) {
-      const strip = stripData(ledger, { sessionId: 'session-aaa' }, locale)
+      const strip = stripData(ledger, { sessionId: 'session-aaa' }, locale, NOW)
       assert.ok([...strip.text].length <= 24, `${locale} strip: ${strip.text}`)
       assert.equal(strip.icon, 'chart')
     }
@@ -532,7 +532,7 @@ test('displayCompact clamps huge totals and the strip/notes stay inside 24/16 ch
       const data = usageData(ledger, { sessionId: 'session-huge' }, locale)
       assert.equal(data.all.total, '10P')
       assert.ok([...data.all.total].length <= 5)
-      const strip = stripData(ledger, { sessionId: 'session-huge' }, locale)
+      const strip = stripData(ledger, { sessionId: 'session-huge' }, locale, NOW)
       assert.ok([...strip.text].length <= 24, `${locale} strip: ${strip.text}`)
       assert.ok(!/000T|0000T|00000T/.test(strip.text), `cut number: ${strip.text}`)
       const notes = turnNoteData(ledger, { sessionId: 'session-huge' }, locale)

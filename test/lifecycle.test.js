@@ -26,7 +26,7 @@ function setup() {
   const handlers = {}
   const captures = {}
   const ctx = { on: (name, fn) => { handlers[name] = fn }, effect: (fn) => { ctx._dispose = fn() }, inject: (deps, fn) => fn(ctx) }
-  ctx.dshGo = { panel: (id, def) => { captures.panel = def }, strip: () => {}, turnNote: () => {} }
+  ctx.dshGo = { panel: (id, def) => { (captures.panels ??= {})[id] = def }, strip: () => {}, turnNote: () => {} }
   apply(ctx, { home })
   return { home, ctx, captures, handlers }
 }
@@ -35,14 +35,14 @@ test('after dispose a late session/event does not push panel data', async () => 
   const { home, ctx, captures, handlers } = setup()
   try {
     let emits = 0
-    const cancel = captures.panel.data({ sessionId: 'session-a' }, () => { emits += 1 }, { locale: 'zh-CN' })
+    const cancel = captures.panels.usage.data({ sessionId: 'session-a' }, () => { emits += 1 }, { locale: 'zh-CN' })
     await sleep(300)
     ctx._dispose()
     const afterDispose = emits
     handlers['session/event']({ id: 'session-a' }, JSON.parse(call(9, 9, 10, 100, 5)))
     await sleep(100)
     assert.equal(emits, afterDispose, 'a late event must not emit after dispose')
-    const lateFeed = captures.panel.data({ sessionId: 'session-a' }, () => { emits += 1 }, { locale: 'zh-CN' })
+    const lateFeed = captures.panels.usage.data({ sessionId: 'session-a' }, () => { emits += 1 }, { locale: 'zh-CN' })
     await sleep(50)
     assert.equal(typeof lateFeed, 'function')
     lateFeed()
@@ -56,7 +56,7 @@ test('after dispose a late session/event does not push panel data', async () => 
 test('dispose and a late feed cancel are idempotent', async () => {
   const { home, ctx, captures } = setup()
   try {
-    const cancel = captures.panel.data({ sessionId: 'session-a' }, () => {}, { locale: 'zh-CN' })
+    const cancel = captures.panels.usage.data({ sessionId: 'session-a' }, () => {}, { locale: 'zh-CN' })
     await sleep(300)
     ctx._dispose()
     ctx._dispose()

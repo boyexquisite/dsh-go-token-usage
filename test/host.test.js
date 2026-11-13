@@ -44,7 +44,7 @@ function setup() {
     inject: (deps, fn) => fn(ctx),
   }
   ctx.dshGo = {
-    panel: (id, def) => { captures.panel = def },
+    panel: (id, def) => { (captures.panels ??= {})[id] = def },
     strip: (id, feed) => { captures.strip = feed },
     turnNote: (id, feed) => { captures.turnNote = feed },
   }
@@ -63,13 +63,13 @@ test('panel, strip and turn notes render in both locales', async () => {
   const { home, imageDir, ctx, captures } = setup()
   await new Promise((resolve) => setTimeout(resolve, 250))
   try {
-    const zh = pull(captures.panel.data, { sessionId: 'session-aaa' }, 'zh-CN')
+    const zh = pull(captures.panels.usage.data, { sessionId: 'session-aaa' }, 'zh-CN')
     assert.match(zh.updated, /^(已更新 |\d{2}\/\d{2} \d{2}:\d{2})/)
     assert.equal(zh.lastVerify, '未核对')
-    const en = pull(captures.panel.data, { sessionId: 'session-aaa' }, 'en-US')
+    const en = pull(captures.panels.usage.data, { sessionId: 'session-aaa' }, 'en-US')
     assert.match(en.updated, /^(Updated |\d{2}\/\d{2} \d{2}:\d{2})/)
     assert.equal(en.lastVerify, 'Not verified')
-    const relay = pull(captures.panel.data, { sessionId: 'session-bbb' }, 'en-US')
+    const relay = pull(captures.panels.usage.data, { sessionId: 'session-bbb' }, 'en-US')
     assert.equal(relay.session.hit, '—')
     const strip = pull(captures.strip, { sessionId: 'session-aaa' }, 'zh-CN')
     assert.ok([...strip.text].length <= 24)
@@ -86,7 +86,7 @@ test('refresh and verify actions answer in the requested locale', async () => {
   const { home, imageDir, ctx, captures } = setup()
   await new Promise((resolve) => setTimeout(resolve, 250))
   try {
-    const refresh = captures.panel.actions.refresh({}, { locale: 'en-US' })
+    const refresh = captures.panels.usage.actions.refresh({}, { locale: 'en-US' })
     assert.ok(refresh.pending && refresh.result)
     assert.deepEqual(await refresh.result(), { toast: 'Refreshed' })
     // The engine appended a call after the last scan. Verify refreshes first, so
@@ -95,7 +95,7 @@ test('refresh and verify actions answer in the requested locale', async () => {
       join(home, 'sessions', 'proj', 'session-aaa', 'session.v4.jsonl.zstd'),
       z([call(3, 3, 30, 2700, 7)]),
     )
-    const verify = captures.panel.actions.verify({}, { locale: 'en-US' })
+    const verify = captures.panels.usage.actions.verify({}, { locale: 'en-US' })
     const effects = await verify.result()
     assert.match(effects[0].text, /^Verified · /)
     assert.ok([...effects[0].text].length <= 40)
@@ -111,16 +111,16 @@ test('image export is deferred and stays scoped to its chat', { skip: !canRender
   const { home, imageDir, ctx, captures } = setup()
   await new Promise((resolve) => setTimeout(resolve, 250))
   try {
-    const exported = captures.panel.actions.export({ sessionId: 'session-aaa' }, { locale: 'zh-CN' })
+    const exported = captures.panels.usage.actions.export({ sessionId: 'session-aaa' }, { locale: 'zh-CN' })
     assert.ok(exported.pending && exported.result, 'slow work must use the deferred effect')
     const effects = await exported.result()
     const patch = effects.find((effect) => effect.type === 'patch')
     assert.match(patch.data.imageSrc, /^asset:usage-\d{8}-\d{6}-[a-z0-9]+\.png$/)
     const files = readdirSync(imageDir).filter((name) => name.endsWith('.png'))
     assert.equal(files.length, 1)
-    const mine = pull(captures.panel.data, { sessionId: 'session-aaa' }, 'zh-CN')
+    const mine = pull(captures.panels.usage.data, { sessionId: 'session-aaa' }, 'zh-CN')
     assert.equal(mine.imageSrc, patch.data.imageSrc, 'this chat shows its own card')
-    const other = pull(captures.panel.data, { sessionId: 'session-bbb' }, 'zh-CN')
+    const other = pull(captures.panels.usage.data, { sessionId: 'session-bbb' }, 'zh-CN')
     assert.equal(other.imageSrc, 'asset:placeholder.png', 'another chat keeps the placeholder')
     ctx._dispose()
   } finally {
@@ -137,15 +137,15 @@ test('deferred actions stop as soon as the bridge aborts', async () => {
   try {
     const aborted = new AbortController()
     aborted.abort()
-    const refresh = captures.panel.actions.refresh({}, { locale: 'en-US' })
+    const refresh = captures.panels.usage.actions.refresh({}, { locale: 'en-US' })
     assert.deepEqual(await refresh.result(aborted.signal), [], 'aborted refresh returns nothing')
-    const verify = captures.panel.actions.verify({}, { locale: 'en-US' })
+    const verify = captures.panels.usage.actions.verify({}, { locale: 'en-US' })
     assert.deepEqual(await verify.result(aborted.signal), [], 'aborted verify returns nothing')
     const before = readdirSync(imageDir).filter((name) => name.endsWith('.png')).length
-    const exported = captures.panel.actions.export({ sessionId: 'session-aaa' }, { locale: 'en-US' })
+    const exported = captures.panels.usage.actions.export({ sessionId: 'session-aaa' }, { locale: 'en-US' })
     assert.deepEqual(await exported.result(aborted.signal), [], 'aborted export returns nothing')
     assert.equal(readdirSync(imageDir).filter((name) => name.endsWith('.png')).length, before, 'aborted export must not render a card')
-    const panel = pull(captures.panel.data, { sessionId: 'session-aaa' }, 'en-US')
+    const panel = pull(captures.panels.usage.data, { sessionId: 'session-aaa' }, 'en-US')
     assert.equal(panel.lastVerify, 'Not verified', 'aborted verify must not store a result')
   } finally {
     ctx._dispose()
@@ -170,23 +170,23 @@ test('the image cache keeps at most 8 chats and drops files that are gone', { sk
     await new Promise((resolve) => setTimeout(resolve, 400))
     const srcs = []
     for (const id of ids) {
-      const exported = captures.panel.actions.export({ sessionId: id }, { locale: 'zh-CN' })
+      const exported = captures.panels.usage.actions.export({ sessionId: id }, { locale: 'zh-CN' })
       const effects = await exported.result()
       const patch = effects.find((effect) => effect.type === 'patch')
       srcs.push(patch.data.imageSrc)
       assert.match(patch.data.imageSrc, /^asset:usage-\d{8}-\d{6}-[a-z0-9]+\.png$/)
     }
     for (const id of ids.slice(2)) {
-      const mine = pull(captures.panel.data, { sessionId: id }, 'zh-CN')
+      const mine = pull(captures.panels.usage.data, { sessionId: id }, 'zh-CN')
       assert.notEqual(mine.imageSrc, 'asset:placeholder.png', `${id} should still show its card`)
     }
     for (const id of ids.slice(0, 2)) {
-      const evicted = pull(captures.panel.data, { sessionId: id }, 'zh-CN')
+      const evicted = pull(captures.panels.usage.data, { sessionId: id }, 'zh-CN')
       assert.equal(evicted.imageSrc, 'asset:placeholder.png', `${id} must fall off the 8-entry cache`)
     }
     const newest = ids[ids.length - 1]
     rmSync(join(imageDir, srcs[srcs.length - 1].slice('asset:'.length)))
-    const gone = pull(captures.panel.data, { sessionId: newest }, 'zh-CN')
+    const gone = pull(captures.panels.usage.data, { sessionId: newest }, 'zh-CN')
     assert.equal(gone.imageSrc, 'asset:placeholder.png', 'a deleted card file falls back to the placeholder')
   } finally {
     ctx._dispose()
