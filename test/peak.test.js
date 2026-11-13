@@ -27,12 +27,12 @@ test('Chinese public holidays are off-peak all day', () => {
 test('strip suffix is short and localized', () => {
   const peak = cst(2026, 11, 13, 10, 0)
   const off = cst(2026, 11, 13, 20, 0)
-  assert.equal(stripSuffix(peak, 'zh-CN'), ' · 峰价标准')
-  assert.equal(stripSuffix(off, 'zh-CN'), ' · 谷价5折')
-  assert.equal(stripSuffix(peak, 'en-US'), ' · peak')
-  assert.equal(stripSuffix(off, 'en-US'), ' · off-peak')
+  assert.equal(stripSuffix(peak, 'zh-CN'), '·峰价标准')
+  assert.equal(stripSuffix(off, 'zh-CN'), '·谷价5折')
+  assert.equal(stripSuffix(peak, 'en-US'), '·peak')
+  assert.equal(stripSuffix(off, 'en-US'), '·off-peak')
   // 尾部标签要给 token 数字留出足够位置。
-  assert.ok([...stripSuffix(peak, 'zh-CN')].length <= 7)
+  assert.ok([...stripSuffix(peak, 'zh-CN')].length <= 5)
 })
 
 test('panel data and view agree on the state', () => {
