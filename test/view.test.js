@@ -144,7 +144,7 @@ test('strip and turn notes stay inside the protocol limits', async () => {
     for (const locale of ['zh-CN', 'en-US']) {
       const strip = stripData(ledger, { sessionId: 'session-aaa' }, locale, NOW)
       assert.ok([...strip.text].length <= 24, `${locale} strip: ${strip.text}`)
-      assert.equal(strip.icon, 'chart')
+      assert.ok(['coin', 'warning'].includes(strip.icon), `icon: ${strip.icon}`)
     }
     const notes = turnNoteData(ledger, { sessionId: 'session-aaa' }, 'zh-CN')
     assert.deepEqual(Object.keys(notes).sort(), ['1', '2', '3'])

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isPeakAt, peakPanelData, peakPanelView, stripSuffix } from '../lib/peak.js'
+import { isPeakAt, peakPanelData, peakPanelView, stripIcon, stripSuffix } from '../lib/peak.js'
 
 // 构造北京时间对应的 UTC 毫秒（中国标准时间固定 UTC+8）。
 const cst = (y, m, d, h, mi) => Date.UTC(y, m - 1, d, h - 8, mi)
@@ -33,6 +33,11 @@ test('strip suffix is short and localized', () => {
   assert.equal(stripSuffix(off, 'en-US'), ' · off-peak')
   // 尾部标签要给 token 数字留出位置；中文 5 字正好让整条落在 24 字内。
   assert.ok([...stripSuffix(off, 'zh-CN')].length <= 5)
+})
+
+test('strip icon differs between peak and off-peak', () => {
+  assert.equal(stripIcon(cst(2026, 11, 13, 10, 0)), 'warning')
+  assert.equal(stripIcon(cst(2026, 11, 13, 20, 0)), 'coin')
 })
 
 test('panel data and view agree on the state', () => {
