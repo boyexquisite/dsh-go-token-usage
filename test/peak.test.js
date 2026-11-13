@@ -70,16 +70,12 @@ test('panel data and view agree on the state', () => {
   assert.equal(view.type, 'stack')
   assert.equal(view.v, 2)
   assert.ok(JSON.stringify(view).length < 8000)
-  // 每个模型的卡片：标题 + 三行价格，标签居左、价格推到最右，两列垂直居中。
+  // 每张卡：标题 + 一张键值表（名称在左、价格在右，一行一项）。
   const flash = view.children.find((c) => c.type === 'stack' && c.children[0]?.text === 'flash')
   assert.ok(flash, 'flash card')
-  const line = flash.children[1]
-  assert.equal(line.type, 'row')
-  assert.deepEqual(line.style, { columns: 'equal', align: 'center' })
-  assert.equal(line.children[0].text, '输入')
-  assert.equal(line.children[1].text, '1 / 2')
-  assert.equal(line.children[1].style.align, 'end')
-  assert.equal(flash.children.length, 4) // 标题 + 三行
+  const prices = flash.children[1]
+  assert.equal(prices.type, 'keyValue')
+  assert.deepEqual(prices.items, [['输入', '1 / 2'], ['缓存命中', '0.02 / 0.04'], ['输出', '4 / 8']])
   assert.ok(JSON.stringify(view).includes('元'), 'CNY unit')
   assert.equal(peakPanelView({ locale: 'en-US' }).type, 'stack')
 })
