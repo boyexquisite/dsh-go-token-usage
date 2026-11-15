@@ -56,6 +56,14 @@ jobs:
             echo "CHANGELOG.md has no non-empty '## $VERSION' section; describe the release before tagging" >&2
             exit 1
           fi
+      - name: Require NPM_TOKEN (fail fast)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error title=NPM_TOKEN missing::Repository secret NPM_TOKEN is not configured; refusing to run the release job when npm publish is impossible." >&2
+            exit 1
+          fi
       - name: Test
         run: |
           # render tests draw a real PNG unless Pillow is missing
