@@ -1,5 +1,21 @@
 # Changelog / 更新日志
 
+## 0.3.1
+
+### 中文
+
+- 修复峰谷价「下次切换」在极端时间戳下的无界循环：`nextSwitchAt` 对超大/非有限时间戳加护栏（`|ms| > 2^53` 时直接给出安全结果），坏数据不再把面板挂死。
+- 打包卫生：删除仓内 `scripts/__pycache__`，出图与测试两处 Python 调用都设 `PYTHONDONTWRITEBYTECODE=1`，不再往包目录写字节码；删掉 `lib/peak.js` 里指向不存在 `tools/` 的死引用。
+- 发布包 `files` 补上 `CHANGELOG.md`：npm 安装包从此自带更新日志。
+- 测试全绿（本机 196 项通过 + 1 项因 root 环境跳过）、checker 0 error。
+
+### English
+
+- Fixed an unbounded loop in the peak-rate "next switch" calculation for huge / non-finite timestamps: `nextSwitchAt` now guards values beyond `|ms| > 2^53`, so corrupt data can no longer hang the panel.
+- Packaging hygiene: removed the checked-in `scripts/__pycache__`, both the image renderer and the tests now set `PYTHONDONTWRITEBYTECODE=1` so no bytecode is written into the package directory, and the dead `tools/` reference in `lib/peak.js` is gone.
+- `CHANGELOG.md` is now in the published `files` list, so the npm package ships its release notes.
+- Tests green (196 pass + 1 root-environment skip locally), checker reports 0 errors.
+
 ## 0.3.0
 
 ### 中文
