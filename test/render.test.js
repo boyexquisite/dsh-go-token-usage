@@ -323,6 +323,8 @@ test('render.py falls back to English labels when no CJK font is available', { s
     const run = (extraEnv) => {
       const env = { ...process.env, ...extraEnv }
       delete env.DSH_TOKEN_USAGE_PYTHON
+      // 测试直接跑仓内 render.py，别在 scripts/ 下留 __pycache__。
+      env.PYTHONDONTWRITEBYTECODE = '1'
       return execFileSync('python3', [RENDER_PY, input, join(dir, 'card.png')], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL', env })
     }
     const forced = JSON.parse(run({ DSH_TOKEN_USAGE_FORCE_ASCII: '1' }))
@@ -365,6 +367,12 @@ worst = min(ratio(muted, bg) for bg in bgs)
 print(round(worst, 3))
 sys.exit(0 if worst >= 4.5 else 1)
 `
-  const worst = execFileSync('python3', ['-c', script, RENDER_PY], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' }).trim()
+  // importlib 加载 render.py 时同样会写 __pycache__，测试里一律关掉。
+  const worst = execFileSync('python3', ['-c', script, RENDER_PY], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    killSignal: 'SIGKILL',
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+  }).trim()
   assert.ok(Number(worst) >= 4.5, `worst contrast ${worst}`)
 })
