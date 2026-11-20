@@ -386,7 +386,7 @@ async function fetchBridgeFile(file) {
   let lastError
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const res = await fetch(url, { redirect: 'follow' })
+      const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(15_000) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const body = Buffer.from(await res.arrayBuffer())
       if (body.length === 0) throw new Error('空文件')

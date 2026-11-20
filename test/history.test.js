@@ -2,7 +2,7 @@
 // cache must never silently erase usage that was already counted.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, cpSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, cpSync, unlinkSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
@@ -225,6 +225,32 @@ test('a damaged cache falls back to the backup instead of losing history', async
     await third.refresh()
     assert.equal(tokens(third), 115)
     third.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('a corrupt index.json never overwrites a good .bak, and no .tmp is left behind', async () => {
+  const h = home()
+  try {
+    writeFileSync(h.zstd, frame([header(), call(1, 1, 1)]))
+    const first = new UsageLedger({ home: h.root, now: () => NOW })
+    await first.refresh()
+    first.dispose()
+    const second = new UsageLedger({ home: h.root, now: () => NOW })
+    await second.refresh()
+    second.dispose()
+    const cacheDir = join(h.root, 'cache', 'dsh-go-token-usage')
+    const bakPath = join(cacheDir, 'index.json.bak')
+    const goodBak = readFileSync(bakPath, 'utf8')
+    assert.doesNotThrow(() => JSON.parse(goodBak))
+    writeFileSync(join(cacheDir, 'index.json'), '{not json')
+    const third = new UsageLedger({ home: h.root, now: () => NOW })
+    await third.refresh()
+    third.dispose()
+    assert.equal(readFileSync(bakPath, 'utf8'), goodBak, 'the good backup was kept')
+    assert.doesNotThrow(() => JSON.parse(readFileSync(join(cacheDir, 'index.json'), 'utf8')))
+    assert.deepEqual(readdirSync(cacheDir).filter((name) => name.endsWith('.tmp')), [])
   } finally {
     rmSync(h.root, { recursive: true, force: true })
   }
