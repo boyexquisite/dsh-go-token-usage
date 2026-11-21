@@ -1,5 +1,19 @@
 # Changelog / 更新日志
 
+## 0.3.2
+
+### 中文
+
+- 安全/稳定性：ledger 保存加 `fsync`，并只在主文件可解析时才转 `.bak`；读取拒绝 FIFO/软链/超大文件，缓存损坏不再静默接管历史。
+- 安装器 `bin/install.mjs` 的下载 fetch 加 15 秒超时，弱网不再无限挂住。
+- 测试全绿；发布包与 npm 0.3.1 的差异即为以上审核修复。
+
+### English
+
+- Security/stability: fsync on ledger saves, only rotate `.bak` when the main file parses; reads reject FIFOs/symlinks/oversized files.
+- Installer fetches now time out after 15 s instead of hanging on a weak network.
+- Tests green; this release ships the audited ledger/install fixes that 0.3.1 lacked.
+
 ## 0.3.1
 
 ### 中文
