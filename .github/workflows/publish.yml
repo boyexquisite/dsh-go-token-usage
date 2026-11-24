@@ -88,6 +88,18 @@ jobs:
         run: |
           mkdir -p dist
           npm pack --pack-destination dist
+      - name: Verify an existing npm package matches this tag
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          WORK=$(mktemp -d)
+          trap 'rm -rf "$WORK"' EXIT
+          npm pack "dsh-go-token-usage@$VERSION" --pack-destination "$WORK" --silent
+          mkdir "$WORK/current" "$WORK/registry"
+          tar -xzf dist/*.tgz -C "$WORK/current" --no-same-owner --no-same-permissions
+          tar -xzf "$WORK"/*.tgz -C "$WORK/registry" --no-same-owner --no-same-permissions
+          diff -r "$WORK/current/package" "$WORK/registry/package"
       - name: Release notes and GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

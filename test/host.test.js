@@ -3,7 +3,8 @@
 // the per-scope image cache are caught.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readdirSync, appendFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readdirSync, appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
@@ -151,6 +152,59 @@ test('deferred actions stop as soon as the bridge aborts', async () => {
     ctx._dispose()
     rmSync(home, { recursive: true, force: true })
     rmSync(imageDir, { recursive: true, force: true })
+  }
+})
+
+test('abort during image rendering kills the Python child and removes partial output', { skip: !canRender() && 'host has no python3 + Pillow' }, () => {
+  const { home, imageDir } = setup()
+  const tools = mkdtempSync(join(tmpdir(), 'host-abort-'))
+  const pidFile = join(tools, 'renderer.pid')
+  const wrapper = join(tools, 'python-wrapper.sh')
+  try {
+    writeFileSync(wrapper, `#!/bin/sh\nif [ "$1" = "-c" ]; then exec /usr/bin/python3 "$@"; fi\nexec /usr/bin/python3 -c 'import os,time; open(os.environ["AUDIT_RENDER_PID"], "w").write(str(os.getpid())); time.sleep(30)' "$@"\n`, { mode: 0o755 })
+    const indexUrl = new URL('../lib/index.js', import.meta.url).href
+    const code = `
+      import { existsSync, readFileSync, readdirSync } from 'node:fs';
+      const { apply } = await import(${JSON.stringify(indexUrl)});
+      const captures = { panels: {} };
+      const ctx = { on() {}, effect(fn) { ctx.dispose = fn() }, inject(deps, fn) { fn(ctx) } };
+      ctx.dshGo = { panel(id, def) { captures.panels[id] = def }, strip() {}, turnNote() {} };
+      apply(ctx, { home: ${JSON.stringify(home)}, imageDir: ${JSON.stringify(imageDir)} });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const before = readdirSync(${JSON.stringify(imageDir)}).filter((name) => name.endsWith('.png')).length;
+      const controller = new AbortController();
+      const action = captures.panels.usage.actions.export({ sessionId: 'session-aaa' }, { locale: 'zh-CN' });
+      const pending = action.result(controller.signal);
+      let ready = false;
+      for (let i = 0; i < 500; i++) {
+        if (existsSync(${JSON.stringify(pidFile)})) { ready = true; break; }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      if (!ready) throw new Error('renderer did not start');
+      const pid = Number(readFileSync(${JSON.stringify(pidFile)}, 'utf8'));
+      controller.abort();
+      const effects = await pending;
+      if (JSON.stringify(effects) !== '[]') throw new Error('aborted export returned effects');
+      let alive = true;
+      for (let i = 0; i < 100 && alive; i++) {
+        try { process.kill(pid, 0) } catch (error) { if (error.code === 'ESRCH') alive = false; else throw error }
+        if (alive) await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      if (alive) throw new Error('renderer survived abort');
+      const after = readdirSync(${JSON.stringify(imageDir)}).filter((name) => name.endsWith('.png')).length;
+      if (after !== before) throw new Error('aborted export left a PNG');
+      ctx.dispose();
+      console.log('mid-render abort cleaned child and output');
+    `
+    const out = execFileSync(process.execPath, ['--input-type=module', '-e', code], {
+      encoding: 'utf8', timeout: 15_000,
+      env: { ...process.env, DSH_TOKEN_USAGE_PYTHON: wrapper, AUDIT_RENDER_PID: pidFile },
+    })
+    assert.match(out, /cleaned child/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(imageDir, { recursive: true, force: true })
+    rmSync(tools, { recursive: true, force: true })
   }
 })
 
