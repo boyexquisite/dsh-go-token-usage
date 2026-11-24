@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 0.3.4
+
+### 中文
+
+- 修复：用量图片渲染途中取消或卸载插件时，立即终止对应 Python 子进程、等待退出并清理未完成 PNG，不再留下后台进程或无人引用的卡片。
+- 发布：重跑已存在版本时逐文件比对当前包与 npm 官方包，防止 tag 与 registry 内容漂移。
+
+### English
+
+- Fixed: cancelling or disposing during image rendering now kills and reaps the exact Python child and removes partial PNG output.
+- Release integrity: re-running an existing version now compares its package contents with the official npm tarball.
+
 ## 0.3.3
 
 ### 中文
