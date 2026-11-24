@@ -1,5 +1,17 @@
 # Changelog / 更新日志
 
+## 0.3.3
+
+### 中文
+
+- 修复：`renderUsageImage` 调用 `prune()` 时改为传入完整文件名（`basename(file)`），正确保留当前刚生成的用量卡片 PNG。
+- 稳定性：`peak` 面板与 `usage-strip` 的 60 秒轮询定时器补充 `.unref()`，与账本轮询保持一致。
+
+### English
+
+- Fixed: pass the full PNG filename (`basename(file)`) to `prune()` in `renderUsageImage` so the current card asset is always preserved by name.
+- Stability: `.unref()` the 60-second interval timers in `peak` panel and `usage-strip`.
+
 ## 0.3.2
 
 ### 中文
