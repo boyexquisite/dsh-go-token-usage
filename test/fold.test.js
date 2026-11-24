@@ -74,12 +74,15 @@ test('seeded: a marker without inherited counts everything', async () => {
   assert.equal(rec.inheritedCut, -1)
 })
 
-test('seeded: a log truncated before its end marker is counted whole', async () => {
+test('seeded: a log truncated before its end marker is not counted twice', async () => {
+  // 2026-11-25：seeded 头说明前缀属于父会话、父日志已经计过。前缀还没走完 end-seed
+  // 就截断时，旧行为把整段再计一次（实测 115→230），且 recount 同规则不报差异。
   const rec = await parseOne({
     lines: [header({ isSeeded: true }), message(0, 1, 1, usage(10, 100, 5))],
   })
-  assert.equal(tokensOf(rec), 115)
-  assert.equal(rec.totals.calls, 1)
+  assert.equal(tokensOf(rec), 0)
+  assert.equal(rec.totals.calls, 0)
+  assert.equal(rec.tornSeeded, true)
 })
 
 test('seeded: an own settlement sharing the inherited slot is not subtracted twice', async () => {
