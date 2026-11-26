@@ -327,7 +327,7 @@ test('--force bridge reinstall keeps a timestamped backup of the old bridge', ()
     writeSyntheticBridge(upstream)
     const stub = join(box.root, 'stub-fetch.mjs')
     writeFileSync(stub, FETCH_STUB)
-    const env = { ...box.env, STUB_UPSTREAM: upstream, DSH_GO_BRIDGE_REF: '0123456789abcdef0123456789abcdef01234567' }
+    const env = { ...box.env, STUB_UPSTREAM: upstream, DSH_GO_BRIDGE_REF: '0123456789abcdef0123456789abcdef01234567', DSH_GO_BRIDGE_ALLOW_UNPINNED: '1' }
     const out = run(['bridge', '--force'], env, ['--import', stub])
     assert.equal(out.status, 0, out.stderr)
     assert.match(out.stdout, /旧桥接已备份到/)

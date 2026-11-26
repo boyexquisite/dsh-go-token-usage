@@ -215,6 +215,13 @@ if (process.env.DSH_GO_BRIDGE_REF !== undefined && !/^[0-9a-f]{40}$/i.test(proce
   console.error('DSH_GO_BRIDGE_REF 必须是 40 位 commit SHA')
   process.exit(2)
 }
+// 2026-11-27：自定义 ref 会整体跳过逐文件 SHA256，等于把任意 fork commit 装进
+// 有 root 权限的远程主机。默认拒绝，必须显式确认「已自行核对 commit」才放行。
+if (BRIDGE_REF !== BRIDGE_PINNED && process.env.DSH_GO_BRIDGE_ALLOW_UNPINNED !== '1') {
+  console.error('自定义 DSH_GO_BRIDGE_REF 会跳过逐文件哈希校验；如已核对 commit 内容，'
+    + '设 DSH_GO_BRIDGE_ALLOW_UNPINNED=1 后重试')
+  process.exit(2)
+}
 const rawDshHome = String(process.env.DSH_HOME ?? '').trim()
 if (isPseudoFsPath(rawDshHome)) {
   // Node 24/22: mkdirSync('/proc/x', {recursive:true}) can spin forever, so refuse
