@@ -15,8 +15,8 @@ const OWN = JSON.parse(readFileSync(join(PKG, 'package.json'), 'utf8'))
 const SOURCE = readFileSync(INSTALLER, 'utf8')
 const BRIDGE_FILES = [...SOURCE.match(/const BRIDGE_FILES = \[([\s\S]*?)\n\]/)[1].matchAll(/'([^']+)'/g)].map((match) => match[1])
 
-function sandbox() {
-  const root = mkdtempSync(join(tmpdir(), 'installer-'))
+function sandbox(temp = false) {
+  const root = mkdtempSync(join(temp ? tmpdir() : PKG, '.installer-test-'))
   const bin = join(root, 'bin')
   mkdirSync(bin)
   // Fake dsh/pnpm: log arguments, or fail when FAKE_FAIL is set.
@@ -192,12 +192,15 @@ test('a local directory --from is copied to a stable host path, not linked', () 
     mkdirSync(source, { recursive: true })
     writeFileSync(join(source, 'package.json'), JSON.stringify({ name: OWN.name, version: OWN.version }))
     chmodSync(source, 0o700)
+    writeFileSync(join(source, '.env'), 'secret', { mode: 0o600 })
+    chmodSync(join(source, '.env'), 0o600)
     const log = join(box.root, 'fake.log')
     const env = { ...box.env, FAKE_LOG: log }
     const out = run(['plugin', '--from', source], env)
     assert.equal(out.status, 0, out.stderr)
     const stable = join(box.home, 'dsh-go', 'plugins', OWN.name)
     assert.equal(existsSync(join(stable, 'package.json')), true, 'the package was copied under DSH_HOME')
+    assert.equal(modeOf(join(stable, '.env')), 0o600, 'private copied files remain private')
     const called = readFileSync(log, 'utf8')
     assert.ok(called.includes(stable), called)
     assert.ok(!called.includes(source), 'pnpm must not be pointed at the source directory')
@@ -344,7 +347,7 @@ test('--force bridge reinstall keeps a timestamped backup of the old bridge', ()
 // ── H8: status explains an unreadable install instead of printing [object Object] ──
 
 test('status explains an unreadable install instead of printing [object Object]', (t) => {
-  const box = sandbox()
+  const box = sandbox(true)
   try {
     const profile = writePluginInstall(box.home, OWN.version)
     const pkgJson = join(profile, 'node_modules', OWN.name, 'package.json')

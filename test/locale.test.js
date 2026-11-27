@@ -60,7 +60,7 @@ test('historyNote: unreadable dirs and dropped cache records get their own hones
 
 test('verifyLine names skipped dirs inside the 40-char toast budget', () => {
   const line = verifyLine(fakeLedger({}, { skippedDirs: 2 }), undefined, 'zh-CN')
-  assert.ok(line.startsWith('核对：一致'), line)
+  assert.ok(line.startsWith('核对不完整'), line)
   assert.ok(line.includes('2 处读不了'), line)
   assert.ok(len(line) <= 40, `${len(line)}: ${line}`)
   const en = verifyLine(fakeLedger({}, { skippedDirs: 2 }), undefined, 'en-US')

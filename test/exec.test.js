@@ -10,7 +10,7 @@ import { isPseudoFsPath, resolveExecutable, resolveHome } from '../lib/exec.js'
 const POSIX = process.platform !== 'win32'
 
 test('an executable is not taken from a world-writable directory', { skip: !POSIX && 'posix modes only' }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'exec-'))
+  const root = mkdtempSync(join(process.cwd(), '.exec-test-'))
   const evilDir = join(root, 'evil')
   const safeDir = join(root, 'safe')
   try {
@@ -35,7 +35,7 @@ test('an executable is not taken from a world-writable directory', { skip: !POSI
 })
 
 test('a non-executable file is not treated as a command', { skip: !POSIX && 'posix modes only' }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'exec-'))
+  const root = mkdtempSync(join(process.cwd(), '.exec-test-'))
   const dir = join(root, 'bin')
   try {
     mkdirSync(dir)
@@ -55,7 +55,7 @@ test('a non-executable file is not treated as a command', { skip: !POSIX && 'pos
 // ── H12: relative PATH entries and writable executables are never trusted ──
 
 test('relative PATH entries are ignored so the result is always absolute', { skip: !POSIX && 'posix modes only' }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'exec-'))
+  const root = mkdtempSync(join(process.cwd(), '.exec-test-'))
   const savedPath = process.env.PATH
   const savedCwd = process.cwd()
   try {
@@ -77,7 +77,7 @@ test('relative PATH entries are ignored so the result is always absolute', { ski
 })
 
 test('a group- or world-writable executable or directory is ignored', { skip: !POSIX && 'posix modes only' }, () => {
-  const root = mkdtempSync(join(tmpdir(), 'exec-'))
+  const root = mkdtempSync(join(process.cwd(), '.exec-test-'))
   const savedPath = process.env.PATH
   try {
     const groupWritable = join(root, 'gw')
