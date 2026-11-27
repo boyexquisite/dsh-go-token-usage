@@ -1,5 +1,21 @@
 # Changelog / 更新日志
 
+## 0.3.5
+
+### 中文
+
+- 修复：同一槽位同金额跨日重结算时，旧日桶没有迁移，后续不同金额的结算从错误的日期扣减，账本出现负值或漏计；现在按重结算时的时间迁移并扣除。
+- 修复：zstd 解码只在「末尾帧不完整」时接受前缀，其余解码错误（含超过解压上限、损坏帧）不再被当成正常截断；核对结果会标出记录不完整。
+- 安全：缓存锁/临时文件不再跟随符号链接（`O_EXCL`/`O_NOFOLLOW` + 同 fd 校验），root 下不会误改或截断别人的文件；安装器的 0600 文件不再被递归放宽成所有用户可读。
+- 安全：执行外部程序前校验路径与所有者，不再拿用户可写的 PATH 当可信来源。
+
+### English
+
+- Fixed: re-billing the same slot with the same amount on a later day now migrates the booked day bucket instead of debiting the wrong day later.
+- Fixed: zstd decoding only accepts a truncated tail when the final frame is genuinely incomplete; corrupt frames or decode limits are no longer treated as clean truncation, and verification flags incomplete records.
+- Security: cache locks/temp files no longer follow symlinks (`O_EXCL`/`O_NOFOLLOW` with same-fd checks); the installer no longer widens pre-existing 0600 files to world-readable.
+- Security: binaries are validated against owner/ancestors before spawning, instead of trusting user-writable PATH entries.
+
 ## 0.3.4
 
 ### 中文
