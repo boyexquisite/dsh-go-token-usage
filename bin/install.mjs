@@ -11,7 +11,7 @@
 // (server, PC) has to install it once. This script fetches it straight from the
 // upstream dsh-Go repository at a pinned commit — nothing is redistributed here.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { chmod, chown, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -332,51 +332,6 @@ function requireEnv() {
 
 const BINARIES = () => ({ dsh: dshBin ?? 'dsh', pnpm: pnpmBin ?? 'pnpm' })
 
-/**
- * When run as root on a host whose engine uses another uid (phones!), make sure
- * what we wrote is traversable/readable: pnpm copies files with the current
- * umask, and root's umask is often 077.
- *
- * Only the paths the installer itself produced are touched, and only bits are
- * added (o+r for files, o+rx for dirs): symlinks are never followed or chmodded,
- * nothing outside $DSH_HOME is touched, and existing modes (0600 secrets, 0755
- * executables) stay as they are. Never writes anything during --dry-run.
- */
-async function fixPermissions(target, { recursive = true } = {}) {
-  try {
-    if (flag('dry-run')) return
-    if (typeof process.getuid !== 'function' || process.getuid() !== 0) return
-    const homeReal = await realpath(dshHome).catch(() => dshHome)
-    const insideHome = (path) => path === homeReal || path.startsWith(homeReal + '/')
-    const linkStat = await lstat(target).catch(() => undefined)
-    if (linkStat === undefined) return
-    let top = target
-    if (linkStat.isSymbolicLink()) {
-      // `dsh plugin add <local dir>` makes a pnpm "link:" to the source. Only fix
-      // a link that points back inside $DSH_HOME; a checkout or npx cache is not ours.
-      top = await realpath(target).catch(() => undefined)
-    } else {
-      top = await realpath(target).catch(() => undefined)
-    }
-    if (top === undefined || !insideHome(top)) return
-    const homeStat = await stat(dshHome).catch(() => undefined)
-    const owner = homeStat && homeStat.uid !== 0 ? { uid: homeStat.uid, gid: homeStat.gid } : undefined
-    const walk = async (path) => {
-      const st = await lstat(path).catch(() => undefined)
-      if (st === undefined || st.isSymbolicLink()) return
-      const mode = st.mode & 0o7777
-      const extra = st.isDirectory() ? 0o555 : 0o444
-      if ((mode & extra) !== extra) await chmod(path, mode | extra).catch(() => {})
-      if (owner !== undefined) await chown(path, owner.uid, owner.gid).catch(() => {})
-      if (!st.isDirectory() || !recursive) return
-      for (const entry of await readdir(path).catch(() => [])) await walk(join(path, entry))
-    }
-    await walk(top)
-  } catch {
-    // permission fixes are best effort; the install itself already succeeded
-  }
-}
-
 function run(cmd, cmdArgs) {
   const bin = BINARIES()[cmd] ?? cmd
   if (flag('dry-run')) {
@@ -479,7 +434,6 @@ async function ensureBridge() {
   }
   if (complete && !flag('force')) {
     console.log('→ 桥接文件已就位，补充注册到 profile')
-    await fixPermissions(bridgeDir)
     run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
     return
   }
@@ -505,7 +459,6 @@ async function ensureBridge() {
     return
   }
   await downloadBridge()
-  await fixPermissions(bridgeDir)
   run('dsh', ['plugin', '--profile', profile, 'add', bridgeDir])
 }
 
@@ -574,7 +527,6 @@ async function ensurePlugin() {
       await rm(stage, { recursive: true, force: true })
       try {
         await cp(copiedSource, stage, { recursive: true })
-        await fixPermissions(stage)
         await rm(stable, { recursive: true, force: true })
         await rename(stage, stable)
       } catch (error) {
@@ -587,10 +539,6 @@ async function ensurePlugin() {
   console.log(`→ dsh plugin --profile ${profile} add ${spec}`)
   try {
     run('dsh', ['plugin', '--profile', profile, 'add', spec])
-    const installedPath = join(profileDir, 'node_modules', OWN.name)
-    await fixPermissions(installedPath)
-    await fixPermissions(profilePkgPath, { recursive: false })
-    await fixPermissions(profileDir, { recursive: false })
   } catch (error) {
     if (from !== undefined || spec === ROOT || flag('dry-run')) throw error
     // Never leave the profile linked to an npx cache directory: copy the package
@@ -605,7 +553,6 @@ async function ensurePlugin() {
     await rm(stage, { recursive: true, force: true })
     try {
       await cp(ROOT, stage, { recursive: true })
-      await fixPermissions(stage)
       await rm(stable, { recursive: true, force: true })
       await rename(stage, stable)
     } catch (copyError) {

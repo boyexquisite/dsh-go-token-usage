@@ -124,7 +124,7 @@ test('aliases never reach the cache file (downgrade cannot double-count)', async
     assert.equal(tokens(ledger), 115)
     ledger.dispose()
     const cache = JSON.parse(readFileSync(join(h.root, 'cache', 'dsh-go-token-usage', 'index.json'), 'utf8'))
-    assert.equal(cache.v, 8)
+    assert.equal(cache.v, 9)
     assert.equal(Object.keys(cache.files).length, 1, 'only the owning record is persisted')
   } finally {
     rmSync(h.root, { recursive: true, force: true })

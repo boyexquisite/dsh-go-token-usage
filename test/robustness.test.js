@@ -421,6 +421,8 @@ test('H9: dispose stops an in-flight scan from writing the cache or emitting', a
 
 test('a pseudo-filesystem home never hangs refresh or dispose', { skip: process.platform === 'win32' && 'posix paths only' }, () => {
   const ledgerUrl = new URL('../lib/ledger.js', import.meta.url).href
+  const isolatedHome = mkdtempSync(join(tmpdir(), 'usage-pseudo-home-'))
+  try {
   for (const home of ['/proc', '/sys']) {
     const code = [
       `import { UsageLedger } from ${JSON.stringify(ledgerUrl)}`,
@@ -429,9 +431,10 @@ test('a pseudo-filesystem home never hangs refresh or dispose', { skip: process.
       'ledger.dispose()',
       "console.log('ok')",
     ].join('\n')
-    const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { timeout: 8000, encoding: 'utf8' })
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { timeout: 8000, encoding: 'utf8', env: { ...process.env, HOME: isolatedHome, USERPROFILE: isolatedHome, DSH_HOME: '' } })
     assert.equal(result.error, undefined, `${home}: ${result.error?.message ?? ''}`)
     assert.equal(result.status, 0, `${home}: ${result.stderr}`)
     assert.match(result.stdout, /ok/)
   }
+  } finally { rmSync(isolatedHome, { recursive: true, force: true }) }
 })
