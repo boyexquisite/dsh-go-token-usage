@@ -8,7 +8,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -20,8 +21,14 @@ const PKG = dirname(dirname(fileURLToPath(import.meta.url)))
 const REAL_ASSETS = join(PKG, 'assets')
 const NOW = Date.now()
 
-/** Assets are as much of an input as the code: start from the real ones. */
-const repoAssets = () => readdirSync(REAL_ASSETS).sort()
+/**
+ * Assets are as much of an input as the code: start from the real ones.
+ * 2026-11-28 审查 P2-3：原来只比名字，同名文件的内容被改掉也发现不了；现在连内容哈希一起比。
+ */
+const repoAssets = () =>
+  readdirSync(REAL_ASSETS)
+    .sort()
+    .map((name) => `${name}:${createHash('sha256').update(readFileSync(join(REAL_ASSETS, name))).digest('hex').slice(0, 16)}`)
 
 /** A throwaway copy of the package (lib + scripts + assets + manifest). */
 function tempPackage() {

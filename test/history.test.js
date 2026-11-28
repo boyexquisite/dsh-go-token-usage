@@ -101,7 +101,9 @@ test('an identical re-settlement in the log releases its provisional live entry'
     await ledger.refresh()
     const u = { input: 10, cached: 100, cacheWrite: 0, output: 5, reasoning: 0, calls: 1 }
     ledger.noteLive('session-aaa', 2, NOW, u, 'm1', 1, 'p', 1)
-    assert.equal(tokens(ledger), 230)
+    // 2026-11-28 审查 P1-6：这是对日志里同一槽位的重结算，引擎按「替换」投影，
+    // 所以面板在日志追平前也只算一次（旧断言 230 把旧值和新值加在了一起）。
+    assert.equal(tokens(ledger), 115)
     writeFileSync(h.zstd, frame([header(), call(1, 1, 1), call(2, 1, 1)])) // identical settlement, seq 2
     await ledger.refresh()
     assert.equal(tokens(ledger), 115, 'the call is counted once, the live entry is gone')
@@ -124,7 +126,7 @@ test('aliases never reach the cache file (downgrade cannot double-count)', async
     assert.equal(tokens(ledger), 115)
     ledger.dispose()
     const cache = JSON.parse(readFileSync(join(h.root, 'cache', 'dsh-go-token-usage', 'index.json'), 'utf8'))
-    assert.equal(cache.v, 9)
+    assert.equal(cache.v, 10)
     assert.equal(Object.keys(cache.files).length, 1, 'only the owning record is persisted')
   } finally {
     rmSync(h.root, { recursive: true, force: true })

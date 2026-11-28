@@ -233,15 +233,17 @@ test('F3 live: a zero-token live re-settlement removes the provisional call', as
     await ledger.refresh()
     const live = (seq, totals, counters = false) =>
       ledger.noteLive('session-aaa', seq, NOW, { ...emptyTotals(), ...totals }, 'm', 1, 'p', 1, counters)
+    // 2026-11-28 审查 P1-6：日志里最后一个槽位被实时重结算时，引擎的口径是「替换」。
+    // 旧断言把「旧值 + 替换值」当成期望（195 = 115 + 80），与引擎投影不一致。
     live(2, { input: 7, cached: 70, output: 3, calls: 1 }, true)
-    assert.equal(totalTokens(ledger.allTime()), 195)
-    assert.equal(ledger.sessionCacheCoverage('session-aaa').withCounters, 2, 'the log call and the live call both reported counters')
+    assert.equal(totalTokens(ledger.allTime()), 80, 'the live settlement replaces the logged slot')
+    assert.equal(ledger.sessionCacheCoverage('session-aaa').withCounters, 1, 'only the live call now owns the slot')
     live(3, { calls: 1 }) // zero tokens for the same turn+step replaces the slot
-    assert.equal(totalTokens(ledger.allTime()), 115, 'the provisional call was replaced with nothing')
+    assert.equal(totalTokens(ledger.allTime()), 0, 'the provisional call was replaced with nothing')
     assert.equal(ledger.pendingCount(), 0)
-    assert.equal(ledger.sessionCacheCoverage('session-aaa').withCounters, 1, 'the replaced live reach is dropped, the log call stays')
+    assert.equal(ledger.sessionCacheCoverage('session-aaa').withCounters, 0, 'a zero settlement reports no counters')
     live(4, { input: 50, cached: 500, output: 8, calls: 1 })
-    assert.equal(totalTokens(ledger.allTime()), 673, 'a later real settlement is added, like the engine')
+    assert.equal(totalTokens(ledger.allTime()), 558, 'a later real settlement replaces the empty slot, like the engine')
     ledger.dispose()
   } finally {
     rmSync(home, { recursive: true, force: true })

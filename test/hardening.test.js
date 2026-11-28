@@ -203,14 +203,44 @@ test('a cache directory symlinked outside $DSH_HOME is never written through', a
 test('a directory with too many generations is bounded and still scans', async () => {
   const h = home()
   try {
+    // 2026-11-28 审查 P2-3：每代放不同金额，才验证得了「读到的是最新那一代」，
+    // 而不是随便读到某一代都得到同样的 115。
     for (let version = 1; version <= 20; version += 1) {
-      const body = frame([header, call(version)])
-      writeFileSync(join(h.dir, `session.v${version}.jsonl.zstd`), body)
+      const one = JSON.stringify({
+        type: 'assistant/message',
+        seq: 1,
+        time: NOW,
+        data: { turn: 1, step: 1, usage: { inputTokens: version, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 }, message: { source: { provider: 'p', model: 'm1' } } },
+      })
+      writeFileSync(join(h.dir, `session.v${version}.jsonl.zstd`), frame([header, one]))
     }
     const ledger = new UsageLedger({ home: h.root, now: () => NOW })
     await ledger.refresh()
-    assert.equal(tokens(ledger), 115, 'the newest generation is still counted')
-    assert.equal(ledger.records.size <= 16, true, 'candidate generations are bounded')
+    assert.equal(tokens(ledger), 20, 'the newest generation (v20) is the one counted')
+    assert.ok(ledger.records.size <= 16, 'candidate generations are bounded')
+    ledger.dispose()
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
+test('two generations of one session: the newer generation wins the tie', async () => {
+  const h = home()
+  try {
+    // 同一会话的两份日志一样长（lastSeq 相同）、金额不同：引擎服务的是版本号更高的那一代。
+    // 2026-11-28 复审：#dedupeSessions 原来按文件大小/名字挑主记录，v4 会压过 v5。
+    const callWith = (input) => JSON.stringify({
+      type: 'assistant/message',
+      seq: 1,
+      time: NOW,
+      data: { turn: 1, step: 1, usage: { inputTokens: input, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 }, message: { source: { provider: 'p', model: 'm1' } } },
+    })
+    writeFileSync(join(h.dir, 'session.v4.jsonl'), `${header}\n${callWith(10)}\n`)
+    writeFileSync(join(h.dir, 'session.v5.jsonl.zstd'), frame([header, callWith(20)]))
+    const ledger = new UsageLedger({ home: h.root, now: () => NOW })
+    await ledger.refresh()
+    assert.equal(tokens(ledger), 20, 'the v5 generation is the one the engine serves')
+    assert.equal(ledger.meta().files, 1, 'the two generations are one session')
     ledger.dispose()
   } finally {
     rmSync(h.root, { recursive: true, force: true })

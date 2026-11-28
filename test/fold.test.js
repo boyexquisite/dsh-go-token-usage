@@ -199,23 +199,33 @@ test('a large single line does not break streaming', async () => {
 
 test('a torn final zstd frame keeps the readable prefix and never crashes', async () => {
   const lines = [header(), message(1, 1, 1, usage(10, 100, 5)), message(2, 2, 1, usage(7, 70, 3))]
-  const whole = z(lines)
-  const full = await parseOne({ bytes: whole })
-  const fullTotal = tokensOf(full)
-  const base = z(lines.slice(0, 2))
-  for (let cut = 1; cut < whole.length; cut += Math.max(1, Math.floor(whole.length / 12))) {
+  // 2026-11-28 审查 P2-4：原来拼接的是「整帧链的第 base.length 字节起的一截」，等于把
+  // 第二帧从中间切开，并不是「第二帧从头被截断」。这里把第二帧单独压缩再截。
+  const firstFrame = z(lines.slice(0, 2)) // header + 115 tokens
+  const secondFrame = z(lines.slice(2)) // 80 tokens, 自己的帧
+  const fullTotal = tokensOf(await parseOne({ bytes: Buffer.concat([firstFrame, secondFrame]) }))
+  assert.equal(fullTotal, 195)
+  let sawPrefix = false
+  for (let cut = 1; cut < secondFrame.length; cut += Math.max(1, Math.floor(secondFrame.length / 16))) {
     const home = mkdtempSync(join(tmpdir(), 'fold-torn-'))
     const dir = join(home, 'sessions', 'proj', SESSION)
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), Buffer.concat([base, whole.subarray(base.length, base.length + cut)]))
+    writeFileSync(join(dir, 'session.v4.jsonl.zstd'), Buffer.concat([firstFrame, secondFrame.subarray(0, cut)]))
     const ledger = new UsageLedger({ home, now: () => NOW })
     await ledger.refresh()
-    const total = tokensOf([...ledger.records.values()][0] ?? { totals: { input: 0, cached: 0, cacheWrite: 0, output: 0 } })
+    const rec = [...ledger.records.values()][0]
+    const total = rec === undefined ? 0 : totalTokens(rec.totals)
     assert.ok(Number.isFinite(total), `cut ${cut}`)
-    assert.ok(total <= fullTotal, `cut ${cut}: ${total} > ${fullTotal}`)
+    // 截断帧要么整帧读不到（0），要么只保留前一个完整帧的 115；绝不能超过完整总数。
+    assert.ok(total === 0 || total === 115, `cut ${cut}: ${total}`)
+    if (total === 115) {
+      sawPrefix = true
+      assert.equal(rec.partial, true, `cut ${cut}: the partial read is disclosed`)
+    }
     ledger.dispose()
     rmSync(home, { recursive: true, force: true })
   }
+  assert.ok(sawPrefix, 'at least one truncation point keeps the readable prefix')
 })
 
 test('the header is recognised regardless of its key order', async () => {

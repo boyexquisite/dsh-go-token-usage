@@ -16,7 +16,8 @@ const SOURCE = readFileSync(INSTALLER, 'utf8')
 const BRIDGE_FILES = [...SOURCE.match(/const BRIDGE_FILES = \[([\s\S]*?)\n\]/)[1].matchAll(/'([^']+)'/g)].map((match) => match[1])
 
 function sandbox(temp = false) {
-  const root = mkdtempSync(join(temp ? tmpdir() : PKG, '.installer-test-'))
+  // 2026-11-28 复审 P2-5：临时目录一律建在 os.tmpdir()，不再往仓库根写（只读工作树也能跑）。
+  const root = mkdtempSync(join(temp ? tmpdir() : tmpdir(), '.installer-test-'))
   const bin = join(root, 'bin')
   mkdirSync(bin)
   // Fake dsh/pnpm: log arguments, or fail when FAKE_FAIL is set.
@@ -169,6 +170,26 @@ test('an older install is upgraded, the current one is left alone', () => {
     writePluginInstall(box.home, OWN.version)
     const skip = run(['plugin', '--dry-run'], box.env)
     assert.match(skip.stdout, /已是最新/)
+  } finally {
+    rmSync(box.root, { recursive: true, force: true })
+  }
+})
+
+test('a leftover node_modules copy is not mistaken for a registered install', () => {
+  // 2026-11-28 审查 P1-5：profile 没注册、node_modules 里只剩一份当前版本时，旧实现直接
+  // 报「已是最新」并跳过，dsh plugin add 从不执行，插件其实不会加载。
+  const box = sandbox()
+  try {
+    const profile = join(box.home, 'profiles', 'web')
+    mkdirSync(join(profile, 'node_modules', OWN.name), { recursive: true })
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
+    writeFileSync(join(profile, 'node_modules', OWN.name, 'package.json'), JSON.stringify({ name: OWN.name, version: OWN.version }))
+    const log = join(box.root, 'fake.log')
+    const out = run(['plugin'], { ...box.env, FAKE_LOG: log })
+    assert.equal(out.status, 0, out.stderr)
+    assert.doesNotMatch(out.stdout, /已是最新/)
+    assert.match(out.stdout, /没注册/)
+    assert.match(readFileSync(log, 'utf8'), /plugin --profile web add/, 'the plugin is really registered')
   } finally {
     rmSync(box.root, { recursive: true, force: true })
   }
@@ -368,6 +389,29 @@ test('status explains an unreadable install instead of printing [object Object]'
       } catch {
         return t.skip('setpriv is not available')
       }
+      // The dropped-to uid has to traverse every ancestor of the sandbox and of node
+      // itself; when it cannot (0700 TMPDIR, private HOME), skip with the reason instead
+      // of failing a correct installer (2026-11-28 复审 P2-5).
+      const traversable = (target) => {
+        let current = target
+        for (;;) {
+          let st
+          try {
+            st = statSync(current)
+          } catch {
+            return false
+          }
+          if (st.isDirectory() && (st.mode & 0o001) === 0) return false
+          const parent = dirname(current)
+          if (parent === current) return true
+          current = parent
+        }
+      }
+      // The sandbox tree itself is opened up by chmodTree() below, so only the path
+      // above it has to be traversable already.
+      if (!traversable(dirname(box.root)) || !traversable(process.execPath)) {
+        return t.skip('the sandbox is not traversable by an unprivileged uid')
+      }
       const pkgCopy = join(box.root, 'pkg')
       mkdirSync(pkgCopy, { recursive: true })
       cpSync(join(PKG, 'bin'), join(pkgCopy, 'bin'), { recursive: true })
@@ -377,6 +421,7 @@ test('status explains an unreadable install instead of printing [object Object]'
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { [OWN.name]: OWN.version } }))
       chmodSync(join(profile, 'node_modules', OWN.name, 'package.json'), 0o600)
       out = capture(() => execFileSync('setpriv', ['--reuid=65534', '--regid=65534', '--clear-groups', 'env', `DSH_HOME=${box.home}`, 'PATH=/usr/bin:/bin', process.execPath, join(pkgCopy, 'bin', 'install.mjs'), 'status'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))
+      assert.equal(out.status, 0, `the dropped-uid status run must succeed: ${out.stderr}`)
     } else {
       chmodSync(pkgJson, 0o000)
       out = run(['status'], box.env)

@@ -75,7 +75,7 @@ test('torn tail is disclosed; corruption and decoded size errors are not swallow
 })
 
 test('executable beneath writable ancestor or foreign owner is rejected', { skip: process.platform === 'win32' }, () => {
-  const root = mkdtempSync(join(process.cwd(), '.exec-regression-'))
+  const root = mkdtempSync(join(tmpdir(), 'exec-regression-'))
   const oldPath = process.env.PATH
   try {
     const bin = join(root, 'bin')

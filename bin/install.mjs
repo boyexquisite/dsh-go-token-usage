@@ -11,12 +11,13 @@
 // (server, PC) has to install it once. This script fetches it straight from the
 // upstream dsh-Go repository at a pinned commit — nothing is redistributed here.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { cp, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { isPseudoFsPath, resolveExecutable, resolveHome } from '../lib/exec.js'
+import { swapIn } from '../lib/swap.js'
 
 const OWN = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -482,9 +483,13 @@ async function ensurePlugin() {
   if (!force) {
     if (installedRaw?.denied === true && installed === undefined) {
       console.log('→ 已装但当前用户读不到（owner/权限不一致），重装')
+    } else if (installed !== undefined && depVersion === undefined) {
+      // 2026-11-28 审查 P1-5：node_modules 里残留一份新版本、profile 却没注册时
+      // （换过的 DSH_HOME、删掉依赖但没删目录），跳过就等于什么都没装。
+      console.log(`→ ${OWN.name} ${installed} 在 node_modules 里但 profile 没注册，重新注册`)
     } else if (installed !== undefined) {
       if (versionAtLeast(installed, OWN.version)) {
-        console.log(`· ${OWN.name} ${installed} 已是最新，跳过（要重装加 --force）`)
+        console.log(`· ${OWN.name} ${installed} 已是最新且已注册，跳过（要重装加 --force）`)
         return
       }
       console.log(`→ 升级 ${OWN.name} ${installed} → ${OWN.version}`)
@@ -523,16 +528,8 @@ async function ensurePlugin() {
       spec = stable
     } else {
       await mkdir(pluginsDir, { recursive: true })
-      const stage = `${stable}.partial-${process.pid}`
-      await rm(stage, { recursive: true, force: true })
-      try {
-        await cp(copiedSource, stage, { recursive: true })
-        await rm(stable, { recursive: true, force: true })
-        await rename(stage, stable)
-      } catch (error) {
-        await rm(stage, { recursive: true, force: true }).catch(() => {})
-        throw new Error(`复制 ${copiedSource} 到 ${stable} 失败（${error.message}）；原副本保持不变`)
-      }
+      // 2026-11-28 审查 P1-2：换入前不删旧副本（见 lib/swap.js），失败会还原。
+      await swapIn(copiedSource, stable)
       spec = stable
     }
   }
@@ -549,16 +546,7 @@ async function ensurePlugin() {
     }
     console.log(`  npm 安装失败，复制当前包到 ${stable} 后再装（不依赖 npx 缓存）`)
     await mkdir(pluginsDir, { recursive: true })
-    const stage = `${stable}.partial-${process.pid}`
-    await rm(stage, { recursive: true, force: true })
-    try {
-      await cp(ROOT, stage, { recursive: true })
-      await rm(stable, { recursive: true, force: true })
-      await rename(stage, stable)
-    } catch (copyError) {
-      await rm(stage, { recursive: true, force: true }).catch(() => {})
-      throw new Error(`复制 ${ROOT} 到 ${stable} 失败（${copyError.message}）；原副本保持不变`)
-    }
+    await swapIn(ROOT, stable)
     run('dsh', ['plugin', '--profile', profile, 'add', stable])
   }
 }

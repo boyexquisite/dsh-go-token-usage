@@ -2,15 +2,15 @@
 // world-writable directories on PATH; those must never win an executable lookup.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, chownSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isPseudoFsPath, resolveExecutable, resolveHome } from '../lib/exec.js'
+import { isPseudoFsPath, isTrustedExecutable, resolveExecutable, resolveHome } from '../lib/exec.js'
 
 const POSIX = process.platform !== 'win32'
 
 test('an executable is not taken from a world-writable directory', { skip: !POSIX && 'posix modes only' }, () => {
-  const root = mkdtempSync(join(process.cwd(), '.exec-test-'))
+  const root = mkdtempSync(join(tmpdir(), 'exec-test-'))
   const evilDir = join(root, 'evil')
   const safeDir = join(root, 'safe')
   try {
@@ -35,7 +35,7 @@ test('an executable is not taken from a world-writable directory', { skip: !POSI
 })
 
 test('a non-executable file is not treated as a command', { skip: !POSIX && 'posix modes only' }, () => {
-  const root = mkdtempSync(join(process.cwd(), '.exec-test-'))
+  const root = mkdtempSync(join(tmpdir(), 'exec-test-'))
   const dir = join(root, 'bin')
   try {
     mkdirSync(dir)
@@ -55,7 +55,7 @@ test('a non-executable file is not treated as a command', { skip: !POSIX && 'pos
 // ── H12: relative PATH entries and writable executables are never trusted ──
 
 test('relative PATH entries are ignored so the result is always absolute', { skip: !POSIX && 'posix modes only' }, () => {
-  const root = mkdtempSync(join(process.cwd(), '.exec-test-'))
+  const root = mkdtempSync(join(tmpdir(), 'exec-test-'))
   const savedPath = process.env.PATH
   const savedCwd = process.cwd()
   try {
@@ -77,7 +77,7 @@ test('relative PATH entries are ignored so the result is always absolute', { ski
 })
 
 test('a group- or world-writable executable or directory is ignored', { skip: !POSIX && 'posix modes only' }, () => {
-  const root = mkdtempSync(join(process.cwd(), '.exec-test-'))
+  const root = mkdtempSync(join(tmpdir(), 'exec-test-'))
   const savedPath = process.env.PATH
   try {
     const groupWritable = join(root, 'gw')
@@ -101,6 +101,55 @@ test('a group- or world-writable executable or directory is ignored', { skip: !P
     assert.equal(resolveExecutable('tool-ok'), join(safe, 'tool-ok'))
   } finally {
     process.env.PATH = savedPath
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+// ── 2026-11-28: 出图解释器（含 DSH_TOKEN_USAGE_PYTHON 覆盖值）的统一信任检查 ──
+test('isTrustedExecutable accepts only absolute, owned, non-writable files', { skip: !POSIX && 'posix modes only' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'exec-trust-'))
+  try {
+    chmodSync(root, 0o700)
+    const safe = join(root, 'safe')
+    mkdirSync(safe)
+    chmodSync(safe, 0o700)
+    const good = join(safe, 'python')
+    writeFileSync(good, '#!/bin/sh\nexit 0\n')
+    chmodSync(good, 0o755)
+    assert.equal(isTrustedExecutable(good), true, 'A private 0700 dir is trusted')
+
+    const plain = join(safe, 'plain')
+    writeFileSync(plain, 'not executable\n')
+    chmodSync(plain, 0o644)
+    assert.equal(isTrustedExecutable(plain), false, 'No executable bit on POSIX')
+
+    const open = join(safe, 'open')
+    writeFileSync(open, '#!/bin/sh\nexit 0\n')
+    chmodSync(open, 0o777)
+    assert.equal(isTrustedExecutable(open), false, 'A world-writable file can be replaced')
+
+    const loose = join(root, 'loose')
+    mkdirSync(loose)
+    chmodSync(loose, 0o777)
+    const under = join(loose, 'python')
+    writeFileSync(under, '#!/bin/sh\nexit 0\n')
+    chmodSync(under, 0o755)
+    assert.equal(isTrustedExecutable(under), false, 'A writable ancestor directory can swap the file')
+
+    assert.equal(isTrustedExecutable('python3'), false, 'Relative paths are never trusted')
+    assert.equal(isTrustedExecutable(join(root, 'missing')), false, 'Missing files are not trusted')
+    assert.equal(isTrustedExecutable(safe), false, 'A directory is not an executable')
+    assert.equal(isTrustedExecutable('/proc/self/exe'), false, 'Pseudo filesystems are refused')
+
+    if (process.getuid?.() === 0) {
+      // root 下才能 chown：别人的文件即使 0755 也不能当解释器。
+      const foreign = join(safe, 'foreign')
+      writeFileSync(foreign, '#!/bin/sh\nexit 0\n')
+      chmodSync(foreign, 0o755)
+      chownSync(foreign, 65534, 65534)
+      assert.equal(isTrustedExecutable(foreign), false, 'Another uid owns the file')
+    }
+  } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })

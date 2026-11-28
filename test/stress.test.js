@@ -32,9 +32,12 @@ test('a live re-settlement is cleaned up once the log catches up', async () => {
     const ledger = new UsageLedger({ home, now: () => NOW })
     await ledger.refresh()
     assert.equal(tokens(ledger), 115)
-    // The engine re-settles turn 1 step 1 before flushing it.
+    // The engine re-settles turn 1 step 1 before flushing it: its projection replaces
+    // the slot, so the panel must already show the replacement instead of old + new
+    // (2026-11-28 审查 P1-6；旧断言把重复计费当成了期望值).
     ledger.noteLive(SESSION, 2, NOW, usage(20, 200, 6), 'm1', 1, 'p', 1)
-    assert.equal(tokens(ledger), 341, 'provisional view: old + replacement')
+    assert.equal(tokens(ledger), 226, 'provisional view: the replacement, not old + replacement')
+    assert.equal(ledger.allTime().calls, 1, 'one call, not two')
     appendFileSync(file, z([message(2, 1, 1, 20, 200, 6)]))
     await ledger.refresh()
     assert.equal(tokens(ledger), 226, 'after the scan only the replacement is counted')
@@ -117,7 +120,9 @@ test('randomised live/scan interleaving keeps totals non-negative and settles co
       seq += 2
       const total = tokens(ledger)
       assert.ok(Number.isFinite(total) && total >= 0, `total ${total}`)
-      for (const bucket of Object.values(ledger.days.values())) for (const value of Object.values(bucket)) assert.ok(value >= 0)
+      // 2026-11-28 审查 P2-3：Object.values() 作用于 Map 的迭代器得到空数组，这条断言以前
+      // 一次都没执行。直接遍历 Map 才真的检查每日桶。
+      for (const bucket of ledger.days.values()) for (const value of Object.values(bucket)) assert.ok(value >= 0)
     }
     // After everything is flushed and scanned, no provisional entries remain.
     assert.equal(ledger.pendingCount(), 0)

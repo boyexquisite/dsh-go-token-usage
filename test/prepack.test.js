@@ -4,7 +4,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,7 +18,8 @@ function makePackage() {
   copyFileSync(SCRIPT, join(root, 'scripts', 'clean-assets.mjs'))
   mkdirSync(join(root, 'assets'), { recursive: true })
   writeFileSync(join(root, 'assets', '.gitkeep'), '')
-  writeFileSync(join(root, 'assets', 'placeholder.png'), 'placeholder')
+  // 真实的占位图是 PNG（脚本会校验 magic，防止有人把本地用量图塞进白名单名字里）。
+  copyFileSync(join(PKG, 'assets', 'placeholder.png'), join(root, 'assets', 'placeholder.png'))
   return root
 }
 
@@ -89,6 +90,52 @@ test('prepack fails closed when a usage image path cannot be removed (root-safe 
     assert.notEqual(result.status, 0, 'a usage image that cannot be removed must block packing')
     assert.match(result.stderr, /cannot remove|refusing to pack/)
     assert.ok(assets(root).includes(image), 'the card path is still there, so packing must have failed')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+// ── 2026-11-28 审查 P1-1：白名单只比名字时，同名目录/软链能带着私有文件进包 ──
+
+test('prepack refuses a directory that hides private files behind an allow-listed name', () => {
+  const root = makePackage()
+  try {
+    rmSync(join(root, 'assets', 'placeholder.png'))
+    mkdirSync(join(root, 'assets', 'placeholder.png'))
+    writeFileSync(join(root, 'assets', 'placeholder.png', 'secret.txt'), 'local usage numbers')
+    const result = run(root)
+    assert.notEqual(result.status, 0, 'packing must fail instead of shipping the nested file')
+    assert.match(result.stderr, /placeholder\.png/)
+    assert.match(result.stderr, /不是普通文件/)
+    // 脚本只拒绝打包，不动别人的文件。
+    assert.deepEqual(readdirSync(join(root, 'assets', 'placeholder.png')), ['secret.txt'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('prepack refuses a symlinked allow-listed asset', () => {
+  const root = makePackage()
+  try {
+    const outside = join(root, 'private-card.png')
+    copyFileSync(join(PKG, 'assets', 'placeholder.png'), outside)
+    rmSync(join(root, 'assets', 'placeholder.png'))
+    symlinkSync(outside, join(root, 'assets', 'placeholder.png'))
+    const result = run(root)
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /符号链接/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('prepack refuses an allow-listed name that is not the placeholder PNG', () => {
+  const root = makePackage()
+  try {
+    writeFileSync(join(root, 'assets', 'placeholder.png'), 'not a png at all')
+    const result = run(root)
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /不是 PNG/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

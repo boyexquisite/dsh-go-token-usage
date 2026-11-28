@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import zlib from 'node:zlib'
 import { apply } from '../lib/index.js'
 import { canRender } from '../lib/render.js'
+import { resolveExecutable } from '../lib/exec.js'
 
 const NOW = Date.now()
 const z = (lines) => zlib.zstdCompressSync(Buffer.from(lines.join('\n') + '\n', 'utf8'))
@@ -161,7 +162,10 @@ test('abort during image rendering kills the Python child and removes partial ou
   const pidFile = join(tools, 'renderer.pid')
   const wrapper = join(tools, 'python-wrapper.sh')
   try {
-    writeFileSync(wrapper, `#!/bin/sh\nif [ "$1" = "-c" ]; then exec /usr/bin/python3 "$@"; fi\nexec /usr/bin/python3 -c 'import os,time; open(os.environ["AUDIT_RENDER_PID"], "w").write(str(os.getpid())); time.sleep(30)' "$@"\n`, { mode: 0o755 })
+    // 2026-11-28: 别写死 /usr/bin/python3——用它在这里实际探测到的解释器，
+    // 否则没有该路径的 host 上 abort 测试会莫名跳过/失败。
+    const python = resolveExecutable('python3') ?? 'python3'
+    writeFileSync(wrapper, `#!/bin/sh\nif [ "$1" = "-c" ]; then exec ${JSON.stringify(python)} "$@"; fi\nexec ${JSON.stringify(python)} -c 'import os,time; open(os.environ["AUDIT_RENDER_PID"], "w").write(str(os.getpid())); time.sleep(30)' "$@"\n`, { mode: 0o755 })
     const indexUrl = new URL('../lib/index.js', import.meta.url).href
     const code = `
       import { existsSync, readFileSync, readdirSync } from 'node:fs';

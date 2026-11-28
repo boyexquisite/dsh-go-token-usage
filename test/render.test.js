@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import zlib from 'node:zlib'
 import { UsageLedger } from '../lib/ledger.js'
 import { canRender, cardData, ensureRenderer, pickTempDir, renderUsageImage, safeEnsureDir } from '../lib/render.js'
+import { resolveExecutable } from '../lib/exec.js'
 import { imagePanelData, usageView } from '../lib/view.js'
 
 const NOW = new Date(2026, 10, 12, 12, 0, 0).getTime()
@@ -142,6 +143,7 @@ test('cardData: unknown chat keeps a dashes row, lists six models, clips labels'
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const RENDER_URL = pathToFileURL(join(PKG_ROOT, 'lib', 'render.js')).href
 const LEDGER_URL = pathToFileURL(join(PKG_ROOT, 'lib', 'ledger.js')).href
+const EXEC_URL = pathToFileURL(join(PKG_ROOT, 'lib', 'exec.js')).href
 const RENDER_PY = join(PKG_ROOT, 'scripts', 'render.py')
 
 /** Run a snippet in a fresh node process (module state must not leak between tests). */
@@ -231,20 +233,42 @@ test('renders use a private temp dir, clean it up and sweep stale ones', { skip:
   const outDir = mkdtempSync(join(tmpdir(), 'dsh-tmp-out-'))
   const captureDir = mkdtempSync(join(tmpdir(), 'dsh-cap-'))
   const capture = join(captureDir, 'input.json')
+  const modes = join(captureDir, 'modes.txt')
   const wrapper = join(captureDir, 'python-wrapper.sh')
-  writeFileSync(wrapper, `#!/bin/sh\ncase "$1" in\n  -c) exec /usr/bin/env python3 "$@" ;;\nesac\ncp "$2" ${JSON.stringify(capture)}\nexec /usr/bin/env python3 "$@"\n`)
+  // 2026-11-28 审查 P2-3：记录渲染进程**真正看到**的输入文件与它的临时目录的权限
+  // （$2 的父目录），而不是测试自己建的 captureDir。
+  const statCode = 'const fs=require("node:fs"),p=require("node:path");const f=process.argv[1];fs.writeFileSync(process.argv[2],[(fs.statSync(f).mode&0o777).toString(8),(fs.statSync(p.dirname(f)).mode&0o777).toString(8)].join("\\n"))'
+  writeFileSync(wrapper, `#!/bin/sh\ncase "$1" in\n  -c) exec /usr/bin/env python3 "$@" ;;\nesac\ncp "$2" ${JSON.stringify(capture)}\n${JSON.stringify(process.execPath)} -e ${JSON.stringify(statCode)} "$2" ${JSON.stringify(modes)}\nexec /usr/bin/env python3 "$@"\n`)
   chmodSync(wrapper, 0o755)
+  // 2026-11-28: 清理只发生在插件自己的 base（`dsh-usage-<uid>`）里面，而且只按
+  // `run-` 前缀 + 年龄删。base 之外的任何同名条目都不再触碰。
+  const uid = process.getuid?.()
+  const base = join(tempRoot, `dsh-usage-${uid === undefined ? 'u' : uid}`)
+  mkdirSync(base, { mode: 0o700 })
+  chmodSync(base, 0o700)
   const previousTmp = process.env.TMPDIR
   const previousPython = process.env.DSH_TOKEN_USAGE_PYTHON
   try {
-    // A crashed render's dir (older than an hour) and a fresh one that must survive.
-    const stale = join(tempRoot, 'dsh-usage-stale')
+    const old = Date.now() / 1000 - 2 * 60 * 60
+    // Our own crashed render: inside the base, `run-*`, older than an hour.
+    const stale = join(base, 'run-stale')
     mkdirSync(stale, { recursive: true })
     writeFileSync(join(stale, 'card.json'), '{}')
-    const old = Date.now() / 1000 - 2 * 60 * 60
     utimesSync(stale, old, old)
-    const fresh = join(tempRoot, 'dsh-usage-fresh')
+    // A recent one from a concurrent draw: must survive.
+    const fresh = join(base, 'run-fresh')
     mkdirSync(fresh, { recursive: true })
+    // An unrelated directory with our prefix, at the shared TMPDIR root.
+    const foreign = join(tempRoot, 'dsh-usage-someone-else')
+    mkdirSync(foreign, { recursive: true })
+    writeFileSync(join(foreign, 'keep.txt'), 'keep')
+    utimesSync(foreign, old, old)
+    // A symlinked `dsh-usage-*` entry: following it (old code) would unlink it.
+    const linkTarget = join(tempRoot, 'link-target')
+    mkdirSync(linkTarget)
+    utimesSync(linkTarget, old, old)
+    const link = join(tempRoot, 'dsh-usage-link')
+    symlinkSync(linkTarget, link)
     const code = `
       import(${JSON.stringify(RENDER_URL)}).then(async (render) => {
         const { UsageLedger } = await import(${JSON.stringify(LEDGER_URL)});
@@ -263,10 +287,17 @@ test('renders use a private temp dir, clean it up and sweep stale ones', { skip:
     // The card JSON was written 0600 inside a 0700 dir, then removed with the dir.
     assert.equal(existsSync(capture), true, 'wrapper did not capture the card JSON')
     assert.equal(statSync(capture).mode & 0o777, 0o600)
-    assert.equal(statSync(dirname(capture)).mode & 0o777, 0o700)
-    assert.equal(existsSync(stale), false, 'stale dsh-usage-* dir must be swept')
-    assert.equal(existsSync(fresh), true, 'recent dsh-usage-* dirs must not be swept')
-    const leftovers = readdirSync(tempRoot).filter((name) => name.startsWith('dsh-usage-') && name !== 'dsh-usage-fresh')
+    // 0600 的卡 JSON，放在 0700 的私有临时目录里（这里查的是插件实际用的那个目录）。
+    assert.deepEqual(existsSync(modes) ? readFileSync(modes, 'utf8').trim().split('\n') : [], ['600', '700'])
+    assert.equal(statSync(base).mode & 0o777, 0o700, 'the plugin base stays 0700')
+    // 先断言"不越界"，旧实现会最先倒在这里（它把 base 外的同名目录和链接一起删了）。
+    assert.equal(existsSync(foreign), true, 'an unrelated dsh-usage-* dir outside the base must survive')
+    assert.equal(readFileSync(join(foreign, 'keep.txt'), 'utf8'), 'keep', 'its contents must be untouched')
+    assert.equal(lstatSync(link).isSymbolicLink(), true, 'a dsh-usage-* symlink must not be unlinked')
+    assert.equal(existsSync(linkTarget), true)
+    assert.equal(existsSync(stale), false, 'a stale run-* dir inside the base must be swept')
+    assert.equal(existsSync(fresh), true, 'a recent run-* dir inside the base must survive')
+    const leftovers = readdirSync(base).filter((name) => name.startsWith('run-') && name !== 'run-fresh')
     assert.deepEqual(leftovers, [], `leftover temp dirs: ${leftovers}`)
   } finally {
     if (previousTmp === undefined) delete process.env.TMPDIR
@@ -375,4 +406,149 @@ sys.exit(0 if worst >= 4.5 else 1)
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
   }).trim()
   assert.ok(Number(worst) >= 4.5, `worst contrast ${worst}`)
+})
+
+// ── 2026-11-28: DSH_TOKEN_USAGE_PYTHON 覆盖值必须过同一道信任检查 ──────────
+test('an untrusted DSH_TOKEN_USAGE_PYTHON override is never probed', { skip: !canRender() && 'host has no python3 + Pillow' }, () => {
+  const tools = mkdtempSync(join(tmpdir(), 'dsh-bad-python-'))
+  const marker = join(tools, 'executed')
+  const canary = (path) => {
+    writeFileSync(path, `#!/bin/sh\n: > ${JSON.stringify(marker)}\nexit 0\n`)
+    chmodSync(path, 0o755)
+  }
+  try {
+    chmodSync(tools, 0o700)
+    // ① 世界可写文件 ② 可写祖先目录下的文件 ③ 别人 uid 的文件
+    const world = join(tools, 'world.sh')
+    canary(world)
+    chmodSync(world, 0o777)
+    const loose = join(tools, 'loose')
+    mkdirSync(loose)
+    chmodSync(loose, 0o777)
+    const under = join(loose, 'under.sh')
+    canary(under)
+    const overrides = [world, under]
+    if (process.getuid?.() === 0) {
+      const foreign = join(tools, 'foreign.sh')
+      canary(foreign)
+      chownSync(foreign, 65534, 65534)
+      overrides.push(foreign)
+    }
+    const code = `
+      process.env.DSH_TOKEN_USAGE_PYTHON = process.env.BAD_PYTHON;
+      Promise.all([import(${JSON.stringify(RENDER_URL)}), import(${JSON.stringify(EXEC_URL)})]).then(async ([render, exec]) => {
+        // 同步 canRender() 先跑一遍（同样要跳过坏覆盖），再走异步探测。
+        const can = render.canRender();
+        const bin = await render.ensureRenderer();
+        console.log(JSON.stringify({ bin, can, canAfter: render.canRender(), trusted: exec.isTrustedExecutable(bin) }));
+      }).catch((error) => { console.error(error); process.exit(3); });
+    `
+    for (const bad of overrides) {
+      const result = JSON.parse(runNodeChild(code, { timeout: 20_000, env: { BAD_PYTHON: bad } }).trim())
+      assert.notEqual(result.bin, bad, `an untrusted override must not win: ${bad}`)
+      assert.equal(result.trusted, true, `the fallback for ${bad} must be a trusted interpreter`)
+      assert.equal(result.can, true, 'canRender() must also skip the untrusted override')
+      assert.equal(result.canAfter, true)
+    }
+    assert.equal(existsSync(marker), false, 'no untrusted candidate may be probed or executed')
+  } finally {
+    rmSync(tools, { recursive: true, force: true })
+  }
+})
+
+// ── 2026-11-28: 出图文件在 Python 启动前就必须是 0600 ──────────────────────
+test('the card file is created 0600 before the renderer opens it', { skip: !canRender() && 'host has no python3 + Pillow' }, () => {
+  const { home } = homeWithLog()
+  writeRenderableHome(home)
+  const tools = mkdtempSync(join(tmpdir(), 'dsh-mode-'))
+  const outDir = mkdtempSync(join(tmpdir(), 'dsh-mode-out-'))
+  const marker = join(tools, 'mode.txt')
+  const python = resolveExecutable('python3') ?? '/usr/bin/python3'
+  const wrapper = join(tools, 'python-wrapper.sh')
+  writeFileSync(wrapper, [
+    '#!/bin/sh',
+    `if [ "$1" = "-c" ]; then exec ${JSON.stringify(python)} "$@"; fi`,
+    // 记录 render.py 打开目标文件那一刻的权限：node -e code <marker> <target>
+    `${JSON.stringify(process.execPath)} -e 'const fs=require("node:fs");fs.writeFileSync(process.argv[1], (fs.statSync(process.argv[2]).mode & 0o777).toString(8))' ${JSON.stringify(marker)} "$3"`,
+    `exec ${JSON.stringify(python)} "$@"`,
+    '',
+  ].join('\n'))
+  chmodSync(wrapper, 0o755)
+  const failing = join(tools, 'python-failing.sh')
+  writeFileSync(failing, `#!/bin/sh\nif [ "$1" = "-c" ]; then exec ${JSON.stringify(python)} "$@"; fi\nexit 7\n`)
+  chmodSync(failing, 0o755)
+  const code = (bin) => `
+    process.env.DSH_TOKEN_USAGE_PYTHON = ${JSON.stringify(bin)};
+    Promise.all([import(${JSON.stringify(RENDER_URL)}), import(${JSON.stringify(LEDGER_URL)})]).then(async ([render, { UsageLedger }]) => {
+      const ledger = new UsageLedger({ home: ${JSON.stringify(home)}, now: () => ${NOW} });
+      await ledger.refresh();
+      try {
+        const out = await render.renderUsageImage({ ledger, scope: { sessionId: 'session-aaa' }, locale: 'zh-CN', now: ${NOW}, outDir: ${JSON.stringify(outDir)} });
+        ledger.dispose();
+        console.log(JSON.stringify({ ok: true, file: out.file }));
+      } catch (error) {
+        ledger.dispose();
+        console.log(JSON.stringify({ ok: false, message: error.message }));
+      }
+    }).catch((error) => { console.error(error); process.exit(3); });
+  `
+  try {
+    const good = JSON.parse(runNodeChild(code(wrapper), { timeout: 30_000 }).trim())
+    assert.equal(good.ok, true, good.message)
+    assert.equal(readFileSync(marker, 'utf8').trim(), '600', 'Python must see a 0600 file from the very start')
+    assert.equal(statSync(good.file).mode & 0o777, 0o600)
+    rmSync(good.file, { force: true })
+    // 失败路径：解释器报错时，预创建的空文件不能留下来。
+    const bad = JSON.parse(runNodeChild(code(failing), { timeout: 30_000 }).trim())
+    assert.equal(bad.ok, false, 'a failing renderer must surface as an error')
+    assert.equal(readdirSync(outDir).filter((name) => name.endsWith('.png')).length, 0, 'no half-written PNG may survive')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(tools, { recursive: true, force: true })
+    rmSync(outDir, { recursive: true, force: true })
+  }
+})
+
+// ── 2026-11-28: 可信的覆盖值（自建 0700 目录里的脚本）仍然能出图 ──────────
+test('a trusted DSH_TOKEN_USAGE_PYTHON override can still draw the card', { skip: !canRender() && 'host has no python3 + Pillow' }, () => {
+  const { home } = homeWithLog()
+  writeRenderableHome(home)
+  const tools = mkdtempSync(join(tmpdir(), 'dsh-trust-py-'))
+  const outDir = mkdtempSync(join(tmpdir(), 'dsh-trust-out-'))
+  const fake = join(tools, 'python')
+  // 最小假解释器：`-c 'import PIL'` 直接成功；渲染时写 PNG 签名并打印尺寸 JSON。
+  writeFileSync(fake, [
+    '#!/bin/sh',
+    'if [ "$1" = "-c" ]; then exit 0; fi',
+    'printf "\\211PNG\\r\\n\\032\\n" > "$3"',
+    'printf "{\\"width\\":1080,\\"height\\":1500}"',
+    '',
+  ].join('\n'))
+  chmodSync(fake, 0o755)
+  const code = `
+    process.env.DSH_TOKEN_USAGE_PYTHON = ${JSON.stringify(fake)};
+    Promise.all([import(${JSON.stringify(RENDER_URL)}), import(${JSON.stringify(LEDGER_URL)})]).then(async ([render, { UsageLedger }]) => {
+      const ledger = new UsageLedger({ home: ${JSON.stringify(home)}, now: () => ${NOW} });
+      await ledger.refresh();
+      try {
+        const out = await render.renderUsageImage({ ledger, scope: { sessionId: 'session-aaa' }, locale: 'zh-CN', now: ${NOW}, outDir: ${JSON.stringify(outDir)} });
+        ledger.dispose();
+        console.log(JSON.stringify({ ok: true, src: out.src, aspect: out.aspect, file: out.file }));
+      } catch (error) {
+        ledger.dispose();
+        console.log(JSON.stringify({ ok: false, message: error.message }));
+      }
+    }).catch((error) => { console.error(error); process.exit(3); });
+  `
+  try {
+    const out = JSON.parse(runNodeChild(code, { timeout: 30_000 }).trim())
+    assert.equal(out.ok, true, out.message)
+    assert.match(out.src, /^asset:usage-\d{8}-\d{6}-[a-z0-9]+\.png$/)
+    assert.equal(out.aspect, 0.72)
+    assert.equal(statSync(out.file).mode & 0o777, 0o600)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(tools, { recursive: true, force: true })
+    rmSync(outDir, { recursive: true, force: true })
+  }
 })
